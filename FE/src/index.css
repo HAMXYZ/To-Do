@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+:root {
+  font-family: 'Inter', sans-serif;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.inline-time-picker-bar {
+  container-name: inline-time-bar;
+  container-type: inline-size;
+}
+
+.inline-time-picker-label {
+  display: none;
+}
+
+@container inline-time-bar (min-width: 200px) {
+  .inline-time-picker-label {
+    display: inline;
+  }
+}
+
+@keyframes dashboard-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes check-pop {
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+.dashboard-mobile > .relative > header,
+.dashboard-mobile > .relative > main > *,
+.dashboard-desktop > header,
+.dashboard-desktop > main > * {
+  animation: dashboard-enter 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.dashboard-mobile > .relative > main > :nth-child(2),
+.dashboard-desktop > main > :nth-child(2) {
+  animation-delay: 70ms;
+}
+
+.dashboard-mobile > .relative > main > :nth-child(3),
+.dashboard-desktop > main > :nth-child(3) {
+  animation-delay: 130ms;
+}
+
+.dashboard-mobile > .relative > main > :nth-child(4),
+.dashboard-desktop > main > :nth-child(4) {
+  animation-delay: 190ms;
+}
+
+.dashboard-mobile main article,
+.dashboard-mobile main section,
+.dashboard-desktop main > .grid > section,
+.dashboard-desktop main > div.overflow-x-auto section[aria-label$="tasks"] {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+@media (hover: hover) {
+  .dashboard-mobile main article:hover,
+  .dashboard-mobile main section:hover,
+  .dashboard-desktop main > .grid > section:hover,
+  .dashboard-desktop main > div.overflow-x-auto section[aria-label$="tasks"]:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.dashboard-mobile input[type="checkbox"]:checked + span,
+.dashboard-desktop input[type="checkbox"]:checked + span {
+  animation: check-pop 220ms ease-out;
+}
+
+.mobile-date-strip {
+  scrollbar-width: none;
+}
+
+.mobile-date-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.dashboard-dark .dashboard-desktop,
+.dashboard-dark .dashboard-mobile {
+  background: #101b19;
+  color: #e6f3ea;
+}
+
+.dashboard-dark .dashboard-desktop > header,
+.dashboard-dark .dashboard-desktop main [class~="bg-white"],
+.dashboard-dark .dashboard-mobile article,
+.dashboard-dark .dashboard-mobile main [class~="bg-white"] {
+  background-color: #1c2d27;
+  border-color: #354b3d;
+  color: #e6f3ea;
+}
+
+.dashboard-dark .dashboard-desktop main :is(h2, h3, p),
+.dashboard-dark .dashboard-mobile main :is(h1, h2, h3, p) {
+  color: #e2f2e6;
+}
+
+.dashboard-dark .dashboard-mobile > .pointer-events-none.fixed {
+  background: linear-gradient(to top, #101b19, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
