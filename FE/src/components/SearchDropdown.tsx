@@ -2,6 +2,7 @@ import React from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import Icon from './Icon'
 import type { SearchResult } from '../types'
+import { getWeekLabelForOffset } from '../utils/week'
 
 export function SearchDropdown({ query, current, other, completedCurrent, completedOther, onSelect }: {
   query: string
@@ -14,11 +15,10 @@ export function SearchDropdown({ query, current, other, completedCurrent, comple
   const [showOther, setShowOther] = React.useState(false)
   const [showCompletedCurrent, setShowCompletedCurrent] = React.useState(false)
   const [showCompletedOther, setShowCompletedOther] = React.useState(false)
-  const weekLabel = (offset: number) => `Week ${39 + offset}`
   const shortDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const renderResult = (result: SearchResult) => <button key={`${result.week}-${result.task.id}`} type="button" onClick={() => onSelect(result)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-[#f2faf3]">
     <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${result.task.done ? 'bg-[#f1f5f1] text-[#95a397]' : 'bg-[#e9f8ec] text-[#4eaa68]'}`}><Icon name={result.task.done ? 'check' : 'list'} size={14} /></span>
-    <span className="min-w-0 flex-1"><span className={`block truncate text-[11px] font-semibold ${result.task.done ? 'text-[#849188] line-through' : 'text-[#354a3b]'}`}>{result.task.title}</span><span className="mt-0.5 block text-[9px] text-[#91a094]">{weekLabel(result.week)} · {shortDays[result.day]} · {result.task.time}</span></span>
+    <span className="min-w-0 flex-1"><span className={`block truncate text-[11px] font-semibold ${result.task.done ? 'text-[#849188] line-through' : 'text-[#354a3b]'}`}>{result.task.title}</span><span className="mt-0.5 block text-[9px] text-[#91a094]">{getWeekLabelForOffset(result.week)} · {shortDays[result.day]} · {result.task.time}</span></span>
     {result.task.starred && <Icon name="star" size={13} className="shrink-0 fill-current text-[#f59e0b]" />}
   </button>
 

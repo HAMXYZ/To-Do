@@ -2,55 +2,20 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { createPortal } from 'react-dom'
 
-import Icon, { IconName } from './components/Icon'
+import Icon, { type IconName } from './components/Icon'
 import { QuickAddTask, InlineTimePicker as InlineTimePickerExternal } from './components/InlineAddTask'
 import { PlannerTaskCard, MobileTaskCard as MobileTaskCardExternal } from './components/TaskCard'
 import { SearchDropdown } from './components/SearchDropdown'
 import { TrashBinModal as TrashBinModalExternal } from './components/TrashBinModal'
-import type { Task, DeletedTask, BreakdownItem, Habit, OverdueTask, SearchResult } from './types'
+import type { Task, BreakdownItem, Habit, OverdueTask, SearchResult } from './types'
+import * as api from './api'
+import { useAppData, type SignedOutReason } from './hooks/useAppData'
+import { localYmd, ymdToLocalDate } from './utils/dates'
+import { getWeekLabelForOffset, WEEK_ANCHOR_MONDAY } from './utils/week'
 
-const startMonday = new Date(2026, 8, 28)
+const startMonday = WEEK_ANCHOR_MONDAY
 const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const shortDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const initialHabitDefinitions: Habit[] = [
-  { id: 1, title: 'Wake up at 6:30 AM', frequency: 'everyday', days: [], time: '06:30', autoTask: false, active: true },
-  { id: 2, title: 'Learn 5 English words', frequency: 'everyday', days: [], time: '09:00', autoTask: false, active: true },
-  { id: 3, title: 'Drink 2L of water', frequency: 'everyday', days: [], time: '08:00', autoTask: false, active: true },
-]
-const initialHabits = [
-  [true, true, true, true, false, false, false],
-  [true, true, false, true, false, false, false],
-  [true, true, true, false, false, false, false],
-]
-const initialTasks: Task[] = [
-  { id: 1, title: 'Plan the week ahead', time: '09:00', done: true, category: 'work' },
-  { id: 2, title: 'Morning movement', time: '07:30', done: true, category: 'wellness' },
-  { id: 3, title: 'Inbox zero', time: '11:00', done: true, category: 'work' },
-  { id: 4, title: 'Review project goals', time: '14:30', done: false, category: 'work', ai: true, starred: true, steps: ['Review milestones', 'Identify blockers', 'Set next actions'] },
-  { id: 5, title: 'Read for 20 minutes', time: '20:00', done: false, category: 'personal' },
-  { id: 6, title: 'Deep work session', time: '09:00', done: true, category: 'work', starred: true },
-  { id: 7, title: 'Team standup', time: '10:30', done: true, category: 'work' },
-  { id: 8, title: 'Work on presentation', time: '13:00', done: true, category: 'work', ai: true, steps: ['Outline key points', 'Build slides', 'Practice delivery'] },
-  { id: 9, title: 'Evening walk', time: '18:30', done: false, category: 'wellness' },
-  { id: 10, title: 'Journal & reflect', time: '21:00', done: false, category: 'personal' },
-  { id: 11, title: 'Morning stretch', time: '07:00', done: true, category: 'wellness' },
-  { id: 12, title: 'Design review', time: '10:00', done: true, category: 'work' },
-  { id: 13, title: 'Write project proposal', time: '14:30', done: false, category: 'work', ai: true, steps: ['Draft outline', 'Write first version', 'Proofread & share'] },
-  { id: 14, title: 'Lunch with Maya', time: '12:30', done: false, category: 'personal' },
-  { id: 15, title: 'Send weekly update', time: '16:00', done: false, category: 'work' },
-  { id: 16, title: 'Focus block: product', time: '09:00', done: false, category: 'work' },
-  { id: 17, title: 'Catch up with the team', time: '11:30', done: false, category: 'work' },
-  { id: 18, title: 'Pilates class', time: '17:30', done: false, category: 'wellness' },
-  { id: 19, title: 'Creative brainstorming', time: '10:00', done: false, category: 'work', ai: true, steps: ['Collect inspiration', 'Generate ideas', 'Choose a direction'] },
-  { id: 20, title: 'Wrap up loose ends', time: '15:00', done: false, category: 'work' },
-  { id: 21, title: 'Weekly reflection', time: '17:00', done: false, category: 'personal' },
-  { id: 22, title: 'Slow morning & coffee', time: '09:00', done: false, category: 'personal' },
-  { id: 23, title: 'Go for a long walk', time: '11:00', done: false, category: 'wellness' },
-  { id: 24, title: 'Try a new recipe', time: '18:00', done: false, category: 'personal' },
-  { id: 25, title: 'Reset & recharge', time: '09:30', done: false, category: 'wellness' },
-  { id: 26, title: 'Plan next week', time: '16:00', done: false, category: 'personal' },
-]
-
 function addDays(date: Date, days: number) {
   const result = new Date(date)
   result.setDate(result.getDate() + days)
@@ -135,14 +100,14 @@ function WeekPicker({ weekOffset, onChange, tasksByWeek, getTaskDay }: { weekOff
       const date = addDays(first, index)
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
     }).join(' ')
-    return `week ${39 + offset} ${first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} ${first.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} ${last.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} ${dates}`.toLowerCase().includes(search)
+    return `${getWeekLabelForOffset(offset)} ${first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} ${first.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} ${last.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} ${dates}`.toLowerCase().includes(search)
   })
   const backlog = (tasksByWeek[weekOffset] ?? []).filter(task => !task.done).sort((a, b) => getTaskDay(a.id) - getTaskDay(b.id) || a.time.localeCompare(b.time))
   const monthDay = (date: Date) => `${date.toLocaleDateString('en-US', { month: 'short' })} ${String(date.getDate()).padStart(2, '0')}`
 
   return <div ref={containerRef} className="relative flex w-full items-center gap-1.5 sm:w-auto sm:gap-2">
     <button type="button" onClick={() => onChange(weekOffset - 1)} aria-label="Previous week" className="flex h-10 w-9 shrink-0 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white text-[#66776c] transition hover:border-[#95d9a8] hover:text-[#27844b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80] sm:w-10"><Icon name="chevronLeft" size={17} /></button>
-    <button type="button" onClick={() => { setOpen(value => !value); setShowBacklog(false) }} aria-label="Choose a week" aria-expanded={open} aria-controls="week-picker-menu" className={`flex h-10 min-w-0 flex-1 items-center justify-between gap-1.5 rounded-lg border bg-white px-2 text-[10px] font-semibold text-[#344739] transition sm:min-w-[280px] sm:px-4 sm:text-[13px] ${open ? 'border-[#91dda6] shadow-[0_0_0_3px_rgba(74,222,128,0.12)]' : 'border-[#e2e8f0] hover:border-[#b4d9bd]'} focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80]`}><span className="truncate whitespace-nowrap">Week {39 + weekOffset}: {monthDay(monday)} - {monthDay(sunday)}, {sunday.getFullYear()}</span><Icon name="chevronDown" size={14} className={`shrink-0 text-[#7f9684] transition-transform ${open ? 'rotate-180' : ''}`} /></button>
+    <button type="button" onClick={() => { setOpen(value => !value); setShowBacklog(false) }} aria-label="Choose a week" aria-expanded={open} aria-controls="week-picker-menu" className={`flex h-10 min-w-0 flex-1 items-center justify-between gap-1.5 rounded-lg border bg-white px-2 text-[10px] font-semibold text-[#344739] transition sm:min-w-[280px] sm:px-4 sm:text-[13px] ${open ? 'border-[#91dda6] shadow-[0_0_0_3px_rgba(74,222,128,0.12)]' : 'border-[#e2e8f0] hover:border-[#b4d9bd]'} focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80]`}><span className="truncate whitespace-nowrap">{getWeekLabelForOffset(weekOffset)}: {monthDay(monday)} - {monthDay(sunday)}, {sunday.getFullYear()}</span><Icon name="chevronDown" size={14} className={`shrink-0 text-[#7f9684] transition-transform ${open ? 'rotate-180' : ''}`} /></button>
     <button type="button" onClick={() => onChange(weekOffset + 1)} aria-label="Next week" className="flex h-10 w-9 shrink-0 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white text-[#66776c] transition hover:border-[#95d9a8] hover:text-[#27844b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80] sm:w-10"><Icon name="chevronRight" size={17} /></button>
 
     {open && <div id="week-picker-menu" role="dialog" aria-label="Choose a week" className="absolute left-1/2 top-[calc(100%+12px)] z-40 w-[min(400px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-2xl border border-[#e5ede7] bg-white shadow-[0_12px_35px_rgba(21,51,31,0.1)]">
@@ -160,7 +125,8 @@ function WeekPicker({ weekOffset, onChange, tasksByWeek, getTaskDay }: { weekOff
           const weekTasks = tasksByWeek[offset] ?? []
           const completion = weekTasks.length ? Math.round(weekTasks.filter(task => task.done).length / weekTasks.length * 100) : null
           const selected = offset === weekOffset
-          return <div key={offset}>{month !== previous && <div className="px-2.5 pb-1.5 pt-3 text-[10px] font-bold uppercase tracking-[0.13em] text-[#95a59a] first:pt-1">{month}</div>}<button type="button" role="option" aria-selected={selected} onClick={() => selectWeek(offset)} className={`flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2.5 text-left transition ${selected ? 'bg-[#dcfce7] text-[#205c38]' : 'text-[#42594a] hover:bg-[#f1f5f9]'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-[11px] font-bold ${selected ? 'bg-white/75 text-[#2aaf59]' : 'bg-[#f1f5f1] text-[#91a392]'}`}>{selected ? <Icon name="check" size={16} /> : String(39 + offset).padStart(2, '0')}</span><span className="min-w-0 flex-1"><span className="block text-[12px] font-bold">Week {39 + offset}</span><span className={`mt-0.5 block text-[10px] ${selected ? 'text-[#4b9360]' : 'text-[#94a59a]'}`}>{monthDay(first)} - {monthDay(last)}</span></span>{completion !== null ? <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${selected ? 'bg-white/70 text-[#348751]' : 'bg-[#edf8ef] text-[#65a577]'}`}>{completion}%</span> : <span className="mr-1 h-1.5 w-1.5 rounded-full bg-[#c9d9cd]" />}</button></div>
+          const weekLabel = getWeekLabelForOffset(offset)
+          return <div key={offset}>{month !== previous && <div className="px-2.5 pb-1.5 pt-3 text-[10px] font-bold uppercase tracking-[0.13em] text-[#95a59a] first:pt-1">{month}</div>}<button type="button" role="option" aria-selected={selected} onClick={() => selectWeek(offset)} className={`flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2.5 text-left transition ${selected ? 'bg-[#dcfce7] text-[#205c38]' : 'text-[#42594a] hover:bg-[#f1f5f9]'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-[11px] font-bold ${selected ? 'bg-white/75 text-[#2aaf59]' : 'bg-[#f1f5f1] text-[#91a392]'}`}>{selected ? <Icon name="check" size={16} /> : weekLabel.match(/\d+/)?.[0]}</span><span className="min-w-0 flex-1"><span className="block text-[12px] font-bold">{weekLabel}</span><span className={`mt-0.5 block text-[10px] ${selected ? 'text-[#4b9360]' : 'text-[#94a59a]'}`}>{monthDay(first)} - {monthDay(last)}</span></span>{completion !== null ? <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${selected ? 'bg-white/70 text-[#348751]' : 'bg-[#edf8ef] text-[#65a577]'}`}>{completion}%</span> : <span className="mr-1 h-1.5 w-1.5 rounded-full bg-[#c9d9cd]" />}</button></div>
         }) : <p className="px-3 py-6 text-center text-[12px] text-[#8b9b8f]">No matching weeks. Try a date like 2026-09-29.</p>}
       </div>
       <div className="border-t border-[#eef2ef] px-4 py-2.5 text-center text-[10px] text-[#a2b0a5]">Choose a week to see its plan</div>
@@ -168,30 +134,28 @@ function WeekPicker({ weekOffset, onChange, tasksByWeek, getTaskDay }: { weekOff
   </div>
 }
 
-const reviewHabits = [
-  { title: 'Drink Water', goal: '8 cups per day', color: '#60A5FA', target: 0.86 },
-  { title: 'Read a Little', goal: '20 minutes per day', color: '#FBBF24', target: 0.74 },
-  { title: 'Move My Body', goal: '30 minutes per day', color: '#F472B6', target: 0.69 },
-  { title: 'Practice English', goal: '5 new words per day', color: '#34D399', target: 0.9 },
-  { title: 'Mindful Moments', goal: '10 minutes per day', color: '#A78BFA', target: 0.78 },
-]
+const HABIT_COLORS = ['#60A5FA', '#FBBF24', '#F472B6', '#34D399', '#A78BFA']
+const habitColor = (id: number) => HABIT_COLORS[id % HABIT_COLORS.length]
 
-function habitActivity(date: Date, index: number, year: number, today: Date) {
-  if (date.getFullYear() !== year || date > today) return -1
-  const day = Math.round((date.getTime() - new Date(year, 0, 1).getTime()) / 86400000)
-  const noise = Math.sin(day * 12.9898 + index * 78.233 + year * 0.71) * 43758.5453
-  const amount = noise - Math.floor(noise)
-  if (amount > reviewHabits[index].target) return 0
-  const shade = Math.sin(day * 4.123 + index * 19.47) * 9713.19
-  return 1 + Math.floor((shade - Math.floor(shade)) * 4)
-}
-
-function HabitReviewModal({ selectedMonday, onClose }: { selectedMonday: Date; onClose: () => void }) {
-  const [year, setYear] = useState(2026)
+function HabitReviewModal({ selectedMonday, weekOffset, onClose }: { selectedMonday: Date; weekOffset: number; onClose: () => void }) {
+  const [year, setYear] = useState(() => new Date().getFullYear())
   const [view, setView] = useState<'year' | 'week'>('year')
   const [dark, setDark] = useState(false)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const [heatmap, setHeatmap] = useState<api.Heatmap | null>(null)
+  const [weekData, setWeekData] = useState<api.WeekData | null>(null)
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    api.getHeatmap(year).then(result => { if (!cancelled) { setHeatmap(result); setLoadError('') } }).catch(e => { if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Không tải được dữ liệu') })
+    return () => { cancelled = true }
+  }, [year])
+
+  useEffect(() => {
+    let cancelled = false
+    api.getWeek(weekOffset, { generate: false }).then(result => { if (!cancelled) setWeekData(result) }).catch(e => { if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Không tải được dữ liệu') })
+    return () => { cancelled = true }
+  }, [weekOffset])
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -205,13 +169,18 @@ function HabitReviewModal({ selectedMonday, onClose }: { selectedMonday: Date; o
   const gridEnd = addDays(lastDay, 6 - ((lastDay.getDay() + 6) % 7))
   const gridDays = Array.from({ length: Math.round((gridEnd.getTime() - gridStart.getTime()) / 86400000) + 1 }, (_, index) => addDays(gridStart, index))
   const weekCount = gridDays.length / 7
-  const daysInYear = Array.from({ length: Math.round((addDays(lastDay, 1).getTime() - firstDay.getTime()) / 86400000) }, (_, index) => addDays(firstDay, index))
-  const trackedDays = daysInYear.filter(date => date <= today)
-  const percentages = reviewHabits.map((_, index) => trackedDays.length ? Math.round(trackedDays.filter(date => habitActivity(date, index, year, today) > 0).length / trackedDays.length * 100) : 0)
-  const overall = Math.round(percentages.reduce((sum, value) => sum + value, 0) / reviewHabits.length)
-  const fallbackMonday = new Date(year, 8, 28)
-  const weekStart = selectedMonday.getFullYear() === year ? selectedMonday : addDays(fallbackMonday, -((fallbackMonday.getDay() + 6) % 7))
+  const hm = heatmap && heatmap.year === year ? heatmap : null
+  const rows = (hm?.habits ?? []).map(habit => ({ ...habit, color: habitColor(habit.id) }))
+  const weekRows = (weekData?.habits ?? []).map(habit => ({ ...habit, color: habitColor(habit.id) }))
+  const todayDate = ymdToLocalDate(weekData?.today ?? localYmd())
+  const weekStart = selectedMonday
   const weekDays = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
+  // cells: 0 = trống, 1 = bỏ lỡ, 2 = đã làm. level: -1 không theo dõi, 0 chưa làm, 4 đã làm
+  const levelFor = (habit: { cells: number[] }, date: Date) => {
+    if (date.getFullYear() !== year) return -1
+    const cell = habit.cells[Math.round((date.getTime() - firstDay.getTime()) / 86400000)]
+    return cell === 2 ? 4 : cell === 1 ? 0 : -1
+  }
   const months = Array.from({ length: 12 }, (_, index) => {
     const date = new Date(year, index, 1)
     return { label: date.toLocaleDateString('en-US', { month: 'short' }), left: Math.floor(Math.round((date.getTime() - gridStart.getTime()) / 86400000) / 7) * 12 }
@@ -235,14 +204,14 @@ function HabitReviewModal({ selectedMonday, onClose }: { selectedMonday: Date; o
             <button onClick={() => setView('week')} aria-pressed={view === 'week'} className={`rounded-[7px] px-3 py-2 text-[11px] font-bold transition sm:px-4 ${view === 'week' ? dark ? 'bg-[#2b4b42] text-[#8aebb1]' : 'bg-white text-[#2e9653] shadow-sm' : muted}`}>Weekly View</button>
             <button onClick={() => setView('year')} aria-pressed={view === 'year'} className={`rounded-[7px] px-3 py-2 text-[11px] font-bold transition sm:px-4 ${view === 'year' ? dark ? 'bg-[#2b4b42] text-[#8aebb1]' : 'bg-white text-[#2e9653] shadow-sm' : muted}`}>Yearly Heatmap View</button>
           </div>
-          <div className="flex items-center gap-2"><label className={`flex h-10 items-center gap-2 rounded-[10px] border px-3 text-[12px] font-semibold ${surface}`}><Icon name="calendar" size={15} className="text-[#64c48b]" /><select value={year} onChange={event => setYear(Number(event.target.value))} aria-label="Select year" className="cursor-pointer bg-transparent outline-none"><option value={2024} className="text-[#1f3529]">2024</option><option value={2025} className="text-[#1f3529]">2025</option><option value={2026} className="text-[#1f3529]">2026</option><option value={2027} className="text-[#1f3529]">2027</option></select></label><button onClick={() => setDark(value => !value)} aria-label={`Switch to ${dark ? 'light' : 'dark'} theme`} title={`Switch to ${dark ? 'light' : 'dark'} theme`} className={`flex h-10 w-10 items-center justify-center rounded-[10px] border transition ${surface} ${dark ? 'text-[#a9d9bd]' : 'text-[#6b9378]'}`}><Icon name={dark ? 'sun' : 'moon'} size={17} /></button></div>
+          <div className="flex items-center gap-2"><label className={`flex h-10 items-center gap-2 rounded-[10px] border px-3 text-[12px] font-semibold ${surface}`}><Icon name="calendar" size={15} className="text-[#64c48b]" /><select value={year} onChange={event => setYear(Number(event.target.value))} aria-label="Select year" className="cursor-pointer bg-transparent outline-none">{(hm?.availableYears ?? heatmap?.availableYears ?? [year]).map(option => <option key={option} value={option} className="text-[#1f3529]">{option}</option>)}</select></label><button onClick={() => setDark(value => !value)} aria-label={`Switch to ${dark ? 'light' : 'dark'} theme`} title={`Switch to ${dark ? 'light' : 'dark'} theme`} className={`flex h-10 w-10 items-center justify-center rounded-[10px] border transition ${surface} ${dark ? 'text-[#a9d9bd]' : 'text-[#6b9378]'}`}><Icon name={dark ? 'sun' : 'moon'} size={17} /></button></div>
         </div>
 
-        <div className="mb-5 grid grid-cols-3 gap-2.5 sm:gap-3"><div className={`rounded-2xl border p-3 sm:p-4 ${statSurface}`}><div className={`text-[10px] font-semibold ${muted}`}>DAYS TRACKED</div><div className="mt-1 text-[21px] font-bold tracking-[-0.05em] sm:text-[25px]">{trackedDays.length}</div></div><div className={`rounded-2xl border p-3 sm:p-4 ${statSurface}`}><div className={`text-[10px] font-semibold ${muted}`}>YOUR HABITS</div><div className="mt-1 text-[21px] font-bold tracking-[-0.05em] sm:text-[25px]">05</div></div><div className={`rounded-2xl border p-3 sm:p-4 ${statSurface}`}><div className={`text-[10px] font-semibold ${muted}`}>CONSISTENCY</div><div className={`mt-1 text-[21px] font-bold tracking-[-0.05em] sm:text-[25px] ${dark ? 'text-[#75dfa0]' : 'text-[#0f172a]'}`}>{overall}%</div></div></div>
+        <div className="mb-5 grid grid-cols-3 gap-2.5 sm:gap-3"><div className={`rounded-2xl border p-3 sm:p-4 ${statSurface}`}><div className={`text-[10px] font-semibold ${muted}`}>DAYS TRACKED</div><div className="mt-1 text-[21px] font-bold tracking-[-0.05em] sm:text-[25px]">{hm ? hm.daysTracked : '–'}</div></div><div className={`rounded-2xl border p-3 sm:p-4 ${statSurface}`}><div className={`text-[10px] font-semibold ${muted}`}>YOUR HABITS</div><div className="mt-1 text-[21px] font-bold tracking-[-0.05em] sm:text-[25px]">{hm ? String(hm.habitCount).padStart(2, '0') : '–'}</div></div><div className={`rounded-2xl border p-3 sm:p-4 ${statSurface}`}><div className={`text-[10px] font-semibold ${muted}`}>CONSISTENCY</div><div className={`mt-1 text-[21px] font-bold tracking-[-0.05em] sm:text-[25px] ${dark ? 'text-[#75dfa0]' : 'text-[#0f172a]'}`}>{hm ? hm.consistency : 0}%</div></div></div>
 
-        {view === 'year' ? <div className={`overflow-x-auto rounded-[16px] border p-3 sm:p-4 ${surface}`}><div className="min-w-[700px]"><div className="relative mb-2 ml-9 h-5" style={{ width: weekCount * 12 - 3 }}>{months.map(month => <span key={month.label} className={`absolute top-0 text-[10px] font-semibold ${muted}`} style={{ left: month.left }}>{month.label}</span>)}</div>{reviewHabits.map((habit, index) => <div key={habit.title} className={`border-t py-3.5 first:border-t-0 first:pt-1 ${dark ? 'border-[#2c3e4c]' : 'border-[#e5ebec]'}`}><div className="mb-2.5 flex items-center justify-between gap-3"><div className="flex items-center gap-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-[8px]" style={{ backgroundColor: `${habit.color}20`, color: habit.color }}><Icon name="check" size={16} /></span><div className="text-[12px] font-bold sm:text-[13px]">{habit.title} <span className={`font-normal ${muted}`}>· {habit.goal}</span></div></div><span className="text-[13px] font-bold" style={{ color: habit.color }}>{percentages[index]}%</span></div><div className="flex items-center gap-2"><div className={`flex w-7 shrink-0 flex-col justify-between text-[9px] font-semibold ${muted}`} style={{ height: 81 }}><span>M</span><span>W</span><span>F</span><span>S</span></div><div className="grid grid-flow-col grid-rows-7 gap-[3px]" style={{ gridTemplateColumns: `repeat(${weekCount}, 9px)` }}>{gridDays.map((date, dayIndex) => { const level = habitActivity(date, index, year, today); return <span key={dayIndex} title={`${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · ${level < 0 ? 'Not tracked' : level === 0 ? 'Not completed' : 'Completed'}`} className="h-[9px] w-[9px] rounded-[3px]" style={{ backgroundColor: level > 0 ? habit.color : empty, opacity: level < 0 ? 0.45 : level === 0 ? 1 : 0.38 + level * 0.155 }} /> })}</div></div></div>)}</div></div> : <div className="space-y-2.5"><div className={`mb-3 text-[11px] font-medium ${muted}`}>{weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {addDays(weekStart, 6).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>{reviewHabits.map((habit, index) => { const complete = weekDays.filter(date => habitActivity(date, index, year, today) > 0).length; return <div key={habit.title} className={`rounded-[13px] border p-3.5 sm:p-4 ${surface}`}><div className="mb-3 flex items-center justify-between gap-3"><div className="flex items-center gap-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ color: habit.color, backgroundColor: `${habit.color}22` }}><Icon name="check" size={16} /></span><div><div className="text-[12px] font-bold">{habit.title}</div><div className={`text-[10px] ${muted}`}>{habit.goal}</div></div></div><span className="text-[12px] font-bold" style={{ color: habit.color }}>{complete}/7 days</span></div><div className="grid grid-cols-7 gap-1.5">{weekDays.map((date, day) => { const level = habitActivity(date, index, year, today); return <div key={day} className="text-center"><div className="mx-auto flex h-8 w-full max-w-10 items-center justify-center rounded-[8px]" style={{ backgroundColor: level > 0 ? `${habit.color}35` : empty, color: habit.color, opacity: level < 0 ? 0.55 : 1 }}>{level > 0 && <Icon name="check" size={15} />}</div><div className={`mt-1.5 text-[9px] font-semibold ${muted}`}>{shortDays[day]}</div></div> })}</div></div> })}</div>}
+        {view === 'year' ? <div className={`overflow-x-auto rounded-[16px] border p-3 sm:p-4 ${surface}`}><div className="min-w-[700px]"><div className="relative mb-2 ml-9 h-5" style={{ width: weekCount * 12 - 3 }}>{months.map(month => <span key={month.label} className={`absolute top-0 text-[10px] font-semibold ${muted}`} style={{ left: month.left }}>{month.label}</span>)}</div>{rows.length === 0 && <p className={`py-6 text-center text-[11px] ${muted}`}>{loadError || (hm ? 'No habit history for this year yet.' : 'Loading…')}</p>}{rows.map(habit => <div key={habit.id} className={`border-t py-3.5 first:border-t-0 first:pt-1 ${dark ? 'border-[#2c3e4c]' : 'border-[#e5ebec]'}`}><div className="mb-2.5 flex items-center justify-between gap-3"><div className="flex items-center gap-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-[8px]" style={{ backgroundColor: `${habit.color}20`, color: habit.color }}><Icon name="check" size={16} /></span><div className="text-[12px] font-bold sm:text-[13px]">{habit.title} {habit.deleted && <span className={`font-normal ${muted}`}>· removed</span>}</div></div><span className="text-[13px] font-bold" style={{ color: habit.color }}>{habit.percent}%</span></div><div className="flex items-center gap-2"><div className={`flex w-7 shrink-0 flex-col justify-between text-[9px] font-semibold ${muted}`} style={{ height: 81 }}><span>M</span><span>W</span><span>F</span><span>S</span></div><div className="grid grid-flow-col grid-rows-7 gap-[3px]" style={{ gridTemplateColumns: `repeat(${weekCount}, 9px)` }}>{gridDays.map((date, dayIndex) => { const level = levelFor(habit, date); return <span key={dayIndex} title={`${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · ${level < 0 ? 'Not tracked' : level === 0 ? 'Not completed' : 'Completed'}`} className="h-[9px] w-[9px] rounded-[3px]" style={{ backgroundColor: level > 0 ? habit.color : empty, opacity: level < 0 ? 0.45 : level === 0 ? 1 : 0.38 + level * 0.155 }} /> })}</div></div></div>)}</div></div> : <div className="space-y-2.5"><div className={`mb-3 text-[11px] font-medium ${muted}`}>{weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {addDays(weekStart, 6).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>{weekRows.length === 0 && <p className={`py-6 text-center text-[11px] ${muted}`}>{loadError || (weekData ? 'No active habits yet.' : 'Loading…')}</p>}{weekRows.map(habit => { return <div key={habit.id} className={`rounded-[13px] border p-3.5 sm:p-4 ${surface}`}><div className="mb-3 flex items-center justify-between gap-3"><div className="flex items-center gap-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ color: habit.color, backgroundColor: `${habit.color}22` }}><Icon name="check" size={16} /></span><div><div className="text-[12px] font-bold">{habit.title}</div><div className={`text-[10px] ${muted}`}>{habit.scheduledCount} days a week</div></div></div><span className="text-[12px] font-bold" style={{ color: habit.color }}>{habit.doneCount}/{habit.scheduledCount} days</span></div><div className="grid grid-cols-7 gap-1.5">{weekDays.map((date, day) => { const level = habit.logs[day] ? 4 : habit.scheduled[day] && date <= todayDate ? 0 : -1; return <div key={day} className="text-center"><div className="mx-auto flex h-8 w-full max-w-10 items-center justify-center rounded-[8px]" style={{ backgroundColor: level > 0 ? `${habit.color}35` : empty, color: habit.color, opacity: level < 0 ? 0.55 : 1 }}>{level > 0 && <Icon name="check" size={15} />}</div><div className={`mt-1.5 text-[9px] font-semibold ${muted}`}>{shortDays[day]}</div></div> })}</div></div> })}</div>}
 
-        <div className={`mt-4 flex flex-wrap items-center justify-between gap-3 text-[10px] ${muted}`}><span>Sample activity for this design preview · Future days are unfilled</span><div className="flex items-center gap-1.5"><span>Less</span><span className="h-[9px] w-[9px] rounded-[3px]" style={{ backgroundColor: empty }} />{[0.45, 0.62, 0.8, 1].map(level => <span key={level} className="h-[9px] w-[9px] rounded-[3px] bg-[#34D399]" style={{ opacity: level }} />)}<span>More</span></div></div>
+        <div className={`mt-4 flex flex-wrap items-center justify-between gap-3 text-[10px] ${muted}`}><span>Future days and days before a habit was created are unfilled</span><div className="flex items-center gap-1.5"><span>Less</span><span className="h-[9px] w-[9px] rounded-[3px]" style={{ backgroundColor: empty }} />{[0.45, 0.62, 0.8, 1].map(level => <span key={level} className="h-[9px] w-[9px] rounded-[3px] bg-[#34D399]" style={{ opacity: level }} />)}<span>More</span></div></div>
       </div>
     </div>
   </div>
@@ -521,11 +490,11 @@ function BreakdownModal({ initialDay, monday, onClose, onSave }: { initialDay: n
 
 type ProfileSection = 'profile' | 'notifications' | 'appearance' | 'settings'
 
-function ProfileMenu({ dark, setDark, showHabits, setShowHabits, compactCards, setCompactCards, weekStartsSunday, setWeekStartsSunday, name, setName, email, setEmail, onOpenTrash }: {
+function ProfileMenu({ dark, setDark, showHabits, setShowHabits, compactCards, setCompactCards, weekStartsSunday, setWeekStartsSunday, name, setName, email, setEmail, onOpenTrash, onLogout }: {
   dark: boolean; setDark: (value: boolean) => void; showHabits: boolean; setShowHabits: (value: boolean) => void
   compactCards: boolean; setCompactCards: (value: boolean) => void; weekStartsSunday: boolean; setWeekStartsSunday: (value: boolean) => void
   name: string; setName: (value: string) => void; email: string; setEmail: (value: string) => void
-  onOpenTrash: () => void
+  onOpenTrash: () => void; onLogout: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [section, setSection] = useState<ProfileSection | null>(null)
@@ -573,7 +542,7 @@ function ProfileMenu({ dark, setDark, showHabits, setShowHabits, compactCards, s
         {section === 'settings' && <div className="space-y-2"><label className="flex items-center justify-between gap-2">Show habit tracker <input type="checkbox" checked={showHabits} onChange={event => setShowHabits(event.target.checked)} className="accent-[#4ade80]" /></label><label className="flex items-center justify-between gap-2">Compact task cards <input type="checkbox" checked={compactCards} onChange={event => setCompactCards(event.target.checked)} className="accent-[#4ade80]" /></label><label className="flex items-center justify-between gap-2">Week starts on <select value={weekStartsSunday ? 'sunday' : 'monday'} onChange={event => setWeekStartsSunday(event.target.value === 'sunday')} className="rounded-lg border border-[#dfeae0] bg-white px-2 py-1 outline-none"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label></div>}
       </div>}
       <div className="my-1 border-t border-[#edf1ee]" />
-      <button type="button" role="menuitem" onClick={() => setMessage('Sign out is unavailable in this local preview.')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[12px] font-semibold text-[#ef4444] hover:bg-[#fff5f4]"><Icon name="logout" size={17} /> Log Out</button>
+      <button type="button" role="menuitem" onClick={() => { setOpen(false); onLogout() }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[12px] font-semibold text-[#ef4444] hover:bg-[#fff5f4]"><Icon name="logout" size={17} /> Log Out</button>
       {message && <p role="status" className="px-3 pb-2 text-[10px] text-[#9a615c]">{message}</p>}
     </motion.div>}
     </AnimatePresence>
@@ -798,13 +767,11 @@ function HabitManagementModal({ habits, onAdd, onUpdate, onRemove, onReorder, on
   </div></div>
 }
 
-export default function App() {
-  const nextHabitId = useRef(4)
-  const suppressedAutoTasks = useRef(new Set<number>())
-  const [weekOffset, setWeekOffset] = useState(0)
-  const [tasksByWeek, setTasksByWeek] = useState<Record<number, Task[]>>({ 0: initialTasks })
-  const [habitDefinitions, setHabitDefinitions] = useState(initialHabitDefinitions)
-  const [habitsByWeek, setHabitsByWeek] = useState<Record<number, Record<number, boolean[]>>>({ 0: Object.fromEntries(initialHabits.map((checks, index) => [index + 1, checks])) })
+export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutReason) => void } = {}) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const data = useAppData(searchQuery, onSignedOut)
+  const { weekOffset, setWeekOffset, tasksByWeek, getTaskDay, habitDefinitions, overdue, undoItem, deletedTasks } = data
+  const { toggleTask, updateTaskTitle, toggleTaskStar, toggleHabit, addHabit, updateHabit, removeHabit, reorderHabit, moveTask, carryOverdue, dismissTask, restoreTask, undoDelete, permanentlyDeleteTask } = data
   const [habitModalOpen, setHabitModalOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -813,39 +780,22 @@ export default function App() {
   const [compactCards, setCompactCards] = useState(false)
   const [weekStartsSunday, setWeekStartsSunday] = useState(false)
   const [darkDashboard, setDarkDashboard] = useState(false)
-  const [profileName, setProfileName] = useState('John Doe')
-  const [profileEmail, setProfileEmail] = useState('john@example.com')
+  const [profileName, setProfileName] = useState('')
+  const [profileEmail, setProfileEmail] = useState('')
   const [quickAddDay, setQuickAddDay] = useState<number | null>(null)
   const [editModeByDay, setEditModeByDay] = useState<Record<number, boolean>>({})
   const [focusMode, setFocusMode] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
   const [trashOpen, setTrashOpen] = useState(false)
-  const [deletedTasks, setDeletedTasks] = useState<DeletedTask[]>([])
-  const [undoItem, setUndoItem] = useState<DeletedTask | null>(null)
-  const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [newDay, setNewDay] = useState(1)
+  const [newDay, setNewDay] = useState(data.today.day)
   const [expandedTask, setExpandedTask] = useState<number | null>(null)
-  const [selectedDay, setSelectedDay] = useState(1)
-  const [addedDays, setAddedDays] = useState<Record<number, number>>({})
-
-  useEffect(() => () => {
-    if (undoTimeout.current) clearTimeout(undoTimeout.current)
-  }, [])
+  const [selectedDay, setSelectedDay] = useState(data.today.day)
 
   const monday = addDays(startMonday, weekOffset * 7)
   const sunday = addDays(monday, 6)
   const tasks = tasksByWeek[weekOffset] ?? []
-  const habitChecks = habitsByWeek[weekOffset] ?? {}
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const currentWeek = weekOffsetForDate(today)
-  const todayDay = (today.getDay() + 6) % 7
-  const overdue: OverdueTask[] = Object.entries(tasksByWeek).flatMap(([offset, weekTasks]) => weekTasks.flatMap(task => {
-    const week = Number(offset)
-    const day = getTaskDay(task.id)
-    const due = addDays(startMonday, week * 7 + day)
-    return !task.done && due < today ? [{ task, week, day, due }] : []
-  })).sort((a, b) => a.due.getTime() - b.due.getTime() || a.task.time.localeCompare(b.task.time))
+  const habitChecks = data.habitsByWeek[weekOffset] ?? {}
+  const currentWeek = data.today.week
+  const todayDay = data.today.day
   const doneCount = tasks.filter(task => task.done).length
   const percent = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0
   const selectedDate = addDays(monday, selectedDay)
@@ -854,163 +804,35 @@ export default function App() {
   const selectedPercent = selectedTasks.length ? Math.round(selectedDone / selectedTasks.length * 100) : 0
   const dayOrder = weekStartsSunday ? [6, 0, 1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6]
 
-  function toggleTask(id: number) {
-    setTasksByWeek(current => ({ ...current, [weekOffset]: (current[weekOffset] ?? []).map(task => task.id === id ? { ...task, done: !task.done, completedAt: task.done ? undefined : Date.now() } : task) }))
-  }
-
-  function updateTaskTitle(id: number, title: string) {
-    setTasksByWeek(current => ({ ...current, [weekOffset]: (current[weekOffset] ?? []).map(task => task.id === id ? { ...task, title } : task) }))
-  }
-
-  function toggleTaskStar(id: number) {
-    setTasksByWeek(current => ({ ...current, [weekOffset]: (current[weekOffset] ?? []).map(task => task.id === id ? { ...task, starred: !task.starred } : task) }))
-  }
-
-  function toggleHabit(habitId: number, dayIndex: number) {
-    const row = habitChecks[habitId] ?? Array(7).fill(false)
-    setHabitsByWeek(current => ({ ...current, [weekOffset]: { ...(current[weekOffset] ?? {}), [habitId]: row.map((checked, day) => day === dayIndex ? !checked : checked) } }))
-  }
-
-  function addHabit(habit: Omit<Habit, 'id'>) {
-    const id = nextHabitId.current++
-    setHabitDefinitions(current => [...current, { ...habit, id }])
-  }
-
-  function updateHabit(habit: Habit) {
-    setHabitDefinitions(current => current.map(item => item.id === habit.id ? habit : item))
-    setTasksByWeek(current => Object.fromEntries(Object.entries(current).map(([week, weekTasks]) => [week, weekTasks.flatMap(task => {
-      if (task.autoHabitId !== habit.id || task.done) return [task]
-      const day = task.id in addedDays ? addedDays[task.id] : (-task.id - 1) % 10
-      return habit.autoTask && habit.active && habitApplies(habit, day) ? [{ ...task, title: habit.title, time: habit.time }] : []
-    })])))
-  }
-
-  function removeHabit(id: number) {
-    setHabitDefinitions(current => current.filter(item => item.id !== id))
-    setHabitsByWeek(current => Object.fromEntries(Object.entries(current).map(([week, checks]) => [week, Object.fromEntries(Object.entries(checks).filter(([key]) => Number(key) !== id))])))
-    setTasksByWeek(current => Object.fromEntries(Object.entries(current).map(([week, weekTasks]) => [week, weekTasks.filter(task => task.autoHabitId !== id || task.done)])))
-  }
-
-  function reorderHabit(from: number, to: number) {
-    setHabitDefinitions(current => { const next = [...current]; next.splice(to, 0, ...next.splice(from, 1)); return next })
-  }
-
-  function moveTask(sourceWeek: number, id: number, targetWeek: number, targetDay: number) {
-    if (sourceWeek !== targetWeek && id < 0) suppressedAutoTasks.current.add(id)
-    setTasksByWeek(current => {
-      const task = current[sourceWeek]?.find(item => item.id === id)
-      if (!task) return current
-      return { ...current, [sourceWeek]: current[sourceWeek].filter(item => item.id !== id), [targetWeek]: [...(sourceWeek === targetWeek ? current[targetWeek].filter(item => item.id !== id) : current[targetWeek] ?? []), task] }
-    })
-    setAddedDays(current => ({ ...current, [id]: targetDay }))
-    setWeekOffset(targetWeek)
-  }
-
-  function carryOverdue() {
-    const moved = new Set(overdue.map(item => `${item.week}:${item.task.id}`))
-    setTasksByWeek(current => {
-      const next = Object.fromEntries(Object.entries(current).map(([week, weekTasks]) => [week, weekTasks.filter(task => !moved.has(`${week}:${task.id}`))])) as Record<number, Task[]>
-      next[currentWeek] = [...(next[currentWeek] ?? []), ...overdue.map(item => item.task)]
-      return next
-    })
-    setAddedDays(current => ({ ...current, ...Object.fromEntries(overdue.map(item => [item.task.id, todayDay])) }))
-    setWeekOffset(currentWeek)
-  }
-
-  function dismissTask(week: number, id: number) {
-    if (id < 0) suppressedAutoTasks.current.add(id)
-    const task = tasksByWeek[week]?.find(item => item.id === id)
-    if (!task) return
-    const removed: DeletedTask = { task, week, day: getTaskDay(id), deletedAt: Date.now() }
-    setDeletedTasks(current => [...current, removed])
-    setTasksByWeek(current => ({ ...current, [week]: (current[week] ?? []).filter(task => task.id !== id) }))
-    if (undoTimeout.current) clearTimeout(undoTimeout.current)
-    setUndoItem(removed)
-    undoTimeout.current = setTimeout(() => setUndoItem(null), 5000)
-  }
-
-  function restoreTask(item: DeletedTask) {
-    setDeletedTasks(current => current.filter(entry => !(entry.week === item.week && entry.task.id === item.task.id && entry.deletedAt === item.deletedAt)))
-    setTasksByWeek(current => ({ ...current, [item.week]: [...(current[item.week] ?? []).filter(task => task.id !== item.task.id), item.task] }))
-    setAddedDays(current => ({ ...current, [item.task.id]: item.day }))
-    setWeekOffset(item.week)
-  }
-
-  function undoDelete() {
-    if (!undoItem) return
-    if (undoTimeout.current) clearTimeout(undoTimeout.current)
-    restoreTask(undoItem)
-    setUndoItem(null)
-  }
-
-  function permanentlyDeleteTask(item: DeletedTask) {
-    setDeletedTasks(current => current.filter(entry => !(entry.week === item.week && entry.task.id === item.task.id && entry.deletedAt === item.deletedAt)))
-    if (undoItem?.week === item.week && undoItem.task.id === item.task.id) {
-      if (undoTimeout.current) clearTimeout(undoTimeout.current)
-      setUndoItem(null)
-    }
-  }
-
   function openTrash() {
-    const purgeBefore = Date.now() - 30 * 24 * 60 * 60 * 1000
-    setDeletedTasks(current => current.filter(item => item.deletedAt >= purgeBefore))
     setTrashOpen(true)
+    void data.refreshTrash()
   }
 
-  const normalizedQuery = searchQuery.trim().toLowerCase()
-  const matchingTasks: SearchResult[] = normalizedQuery ? Object.entries(tasksByWeek).flatMap(([offset, weekTasks]) => weekTasks.flatMap(task => {
-    const week = Number(offset)
-    const day = getTaskDay(task.id)
-    const date = addDays(startMonday, week * 7 + day)
-    const searchable = `${task.title} ${task.time} ${week + 39} ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${dateForInput(date)}`.toLowerCase()
-    return searchable.includes(normalizedQuery) ? [{ task, week, day }] : []
-  })) : []
+  const matchingTasks: SearchResult[] = data.matchingTasks
   const currentMatches = matchingTasks.filter(result => result.week === weekOffset && !result.task.done)
   const otherMatches = matchingTasks.filter(result => result.week !== weekOffset && !result.task.done)
   const completedCurrentMatches = matchingTasks.filter(result => result.week === weekOffset && result.task.done).sort((a, b) => (b.task.completedAt ?? 0) - (a.task.completedAt ?? 0))
   const completedOtherMatches = matchingTasks.filter(result => result.week !== weekOffset && result.task.done).sort((a, b) => (b.task.completedAt ?? 0) - (a.task.completedAt ?? 0))
 
-  function saveBreakdown(items: BreakdownItem[]) {
-    const baseId = Date.now()
-    const newTasks: Task[] = items.map((item, index) => ({ id: baseId + index, title: item.title.trim(), time: item.time, done: false, category: 'work', ai: true }))
-    setTasksByWeek(current => ({ ...current, [weekOffset]: [...(current[weekOffset] ?? []), ...newTasks] }))
-    setAddedDays(current => ({ ...current, ...Object.fromEntries(items.map((item, index) => [baseId + index, item.day])) }))
-    setModalOpen(false)
-  }
-
   function addQuickTask(day: number, title: string, time: string) {
-    const id = Date.now()
-    setTasksByWeek(current => ({ ...current, [weekOffset]: [...(current[weekOffset] ?? []), { id, title, time, done: false, category: 'personal' }] }))
-    setAddedDays(current => ({ ...current, [id]: day }))
-    setQuickAddDay(null)
+    void data.addTask(day, title, time).then(ok => { if (ok) setQuickAddDay(null) })
   }
 
-  function getTaskDay(id: number) {
-    if (id in addedDays) return addedDays[id]
-    if (id < 0) return (-id - 1) % 10
-    if (id <= 5) return 0
-    if (id <= 10) return 1
-    if (id <= 15) return 2
-    if (id <= 18) return 3
-    if (id <= 21) return 4
-    if (id <= 24) return 5
-    return 6
+  function saveBreakdown(items: BreakdownItem[]) {
+    void data.saveBreakdown(items).then(ok => { if (ok) setModalOpen(false) })
+  }
+
+  async function handleLogout() {
+    await api.logout()
+    onSignedOut?.('logout')
   }
 
   useEffect(() => {
-    const now = new Date()
-    now.setHours(0, 0, 0, 0)
-    const generated = habitDefinitions.filter(habit => habit.active && habit.autoTask).flatMap(habit => dayNames.flatMap((_, day) => {
-      if (!habitApplies(habit, day) || addDays(startMonday, weekOffset * 7 + day) < now) return []
-      return [{ id: -(habit.id * 10000000 + (weekOffset + 100000) * 10 + day + 1), title: habit.title, time: habit.time, done: false, category: 'wellness' as const, autoHabitId: habit.id }]
-    }))
-    if (!generated.length) return
-    setTasksByWeek(current => {
-      const existing = current[weekOffset] ?? []
-      const newTasks = generated.filter(task => !suppressedAutoTasks.current.has(task.id) && !existing.some(item => item.id === task.id))
-      return newTasks.length ? { ...current, [weekOffset]: [...existing, ...newTasks] } : current
-    })
-  }, [habitDefinitions, weekOffset])
+    if (!data.me) return
+    setProfileName(data.me.fullName || data.me.email.split('@')[0])
+    setProfileEmail(data.me.email)
+  }, [data.me])
 
   return <div className={`min-h-screen bg-[#f8fafc] text-[#182a23] ${darkDashboard ? 'dashboard-dark' : ''}`}>
     <div className="dashboard-mobile min-h-screen bg-[#fafbf5] pb-32 md:hidden">
@@ -1024,7 +846,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             <Ring value={selectedPercent} size={52} stroke={5}><span className="text-[11px] font-extrabold text-[#2c9353]">{selectedPercent}%</span></Ring>
-            <ProfileMenu dark={darkDashboard} setDark={setDarkDashboard} showHabits={showHabits} setShowHabits={setShowHabits} compactCards={compactCards} setCompactCards={setCompactCards} weekStartsSunday={weekStartsSunday} setWeekStartsSunday={setWeekStartsSunday} name={profileName} setName={setProfileName} email={profileEmail} setEmail={setProfileEmail} onOpenTrash={() => openTrash()} />
+            <ProfileMenu dark={darkDashboard} setDark={setDarkDashboard} showHabits={showHabits} setShowHabits={setShowHabits} compactCards={compactCards} setCompactCards={setCompactCards} weekStartsSunday={weekStartsSunday} setWeekStartsSunday={setWeekStartsSunday} name={profileName} setName={setProfileName} email={profileEmail} setEmail={setProfileEmail} onOpenTrash={() => openTrash()} onLogout={handleLogout} />
           </div>
         </header>
 
@@ -1091,7 +913,7 @@ export default function App() {
               <label className="flex cursor-pointer items-center justify-between py-2 text-[13px] text-[#526458]">Compact task cards<input type="checkbox" checked={compactCards} onChange={() => setCompactCards(value => !value)} className="accent-[#36c76d]" /></label>
             </div>}
           </div>
-          <ProfileMenu dark={darkDashboard} setDark={setDarkDashboard} showHabits={showHabits} setShowHabits={setShowHabits} compactCards={compactCards} setCompactCards={setCompactCards} weekStartsSunday={weekStartsSunday} setWeekStartsSunday={setWeekStartsSunday} name={profileName} setName={setProfileName} email={profileEmail} setEmail={setProfileEmail} onOpenTrash={openTrash} />
+          <ProfileMenu dark={darkDashboard} setDark={setDarkDashboard} showHabits={showHabits} setShowHabits={setShowHabits} compactCards={compactCards} setCompactCards={setCompactCards} weekStartsSunday={weekStartsSunday} setWeekStartsSunday={setWeekStartsSunday} name={profileName} setName={setProfileName} email={profileEmail} setEmail={setProfileEmail} onOpenTrash={openTrash} onLogout={handleLogout} />
         </div>
       </div>
     </header>
@@ -1104,7 +926,7 @@ export default function App() {
 
       <div className={`grid gap-5 ${showHabits ? 'xl:grid-cols-[1.15fr_0.85fr]' : ''}`}>
         <section className="rounded-2xl border border-[#edf1ee] bg-white p-5 shadow-[0_5px_18px_rgba(30,65,43,0.05)] sm:p-6" aria-labelledby="overview-title">
-          <div className="mb-5 flex items-center justify-between"><div><div className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#5bac76]">THE BIG PICTURE</div><h2 id="overview-title" className="text-[18px] font-bold tracking-[-0.035em]">Weekly overview</h2></div><span className="rounded-full bg-[#effbf2] px-3 py-1.5 text-[11px] font-semibold text-[#37895a]">Week {39 + weekOffset}</span></div>
+          <div className="mb-5 flex items-center justify-between"><div><div className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#5bac76]">THE BIG PICTURE</div><h2 id="overview-title" className="text-[18px] font-bold tracking-[-0.035em]">Weekly overview</h2></div><span className="rounded-full bg-[#effbf2] px-3 py-1.5 text-[11px] font-semibold text-[#37895a]">{getWeekLabelForOffset(weekOffset)}</span></div>
           <div className="grid gap-5 md:grid-cols-[0.85fr_1.15fr]">
             <div className="flex flex-col gap-3">
               <div className="relative min-h-[125px] overflow-hidden rounded-[14px] bg-[#eaf9ed] p-4"><div className="absolute -bottom-10 -right-8 h-32 w-32 rounded-full border-[17px] border-white/35" /><div className="mb-3 flex h-7 w-7 items-center justify-center rounded-lg bg-white/80 text-[#36aa61]"><Icon name="target" size={17} /></div><p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#4c9b64]">WEEKLY FOCUS</p><p className="relative mt-1 text-[15px] font-semibold leading-snug text-[#25563a]">Make space for deep work and mindful moments.</p></div>
@@ -1134,7 +956,7 @@ export default function App() {
             const complete = dayTasks.filter(task => task.done).length
             const dayPercent = dayTasks.length ? Math.round(complete / dayTasks.length * 100) : 0
             const date = addDays(monday, index)
-            const featured = index === 2 && weekOffset === 0
+            const featured = weekOffset === currentWeek && index === todayDay
             const editMode = Boolean(editModeByDay[index])
 
             return <section
@@ -1213,7 +1035,10 @@ export default function App() {
     <AnimatePresence>
       {undoItem && <motion.div role="status" className="fixed bottom-5 left-1/2 z-[90] flex -translate-x-1/2 items-center gap-4 rounded-xl bg-[#20382a] px-4 py-3 text-white shadow-xl" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} transition={{ duration: 0.18 }}><span className="text-[12px] font-medium">Task moved to trash</span><button type="button" onClick={undoDelete} className="text-[11px] font-bold text-[#8cf0a5] hover:text-white">Undo</button></motion.div>}
     </AnimatePresence>
+    <AnimatePresence>
+      {data.error && <motion.div role="alert" className="fixed bottom-20 left-1/2 z-[95] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-4 rounded-xl bg-[#7a2b26] px-4 py-3 text-white shadow-xl" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} transition={{ duration: 0.18 }}><span className="text-[12px] font-medium">{data.error}</span><button type="button" onClick={data.clearError} className="text-[11px] font-bold text-[#ffd1cc] hover:text-white">Dismiss</button></motion.div>}
+    </AnimatePresence>
     {habitModalOpen && <HabitManagementModal habits={habitDefinitions} onAdd={addHabit} onUpdate={updateHabit} onRemove={removeHabit} onReorder={reorderHabit} onClose={() => setHabitModalOpen(false)} />}
-    {reviewOpen && <HabitReviewModal selectedMonday={monday} onClose={() => setReviewOpen(false)} />}
+    {reviewOpen && <HabitReviewModal selectedMonday={monday} weekOffset={weekOffset} onClose={() => setReviewOpen(false)} />}
   </div>
 }

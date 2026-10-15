@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import { motion } from 'framer-motion'
 import Icon from './Icon'
 import type { DeletedTask } from '../types'
+import { getWeekLabelForOffset } from '../utils/week'
 
 export function TrashBinModal({ items, onClose, onRestore, onDelete }: {
   items: DeletedTask[]
@@ -21,7 +22,7 @@ export function TrashBinModal({ items, onClose, onRestore, onDelete }: {
       <div className="space-y-2 overflow-y-auto p-4">
         {items.length ? items.map(item => <article key={`${item.week}-${item.task.id}`} className="flex items-center gap-3 rounded-xl border border-[#edf1ee] bg-[#fbfcfb] p-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#fff0ef] text-[#d2756d]"><Icon name="trash" size={16} /></span>
-          <div className="min-w-0 flex-1"><p className="truncate text-[12px] font-semibold text-[#35483a]">{item.task.title}</p><p className="mt-1 text-[10px] text-[#96a197]">Week {39 + item.week} · {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][item.day]} · {item.task.time} · Deleted {Math.max(0, Math.floor((Date.now() - item.deletedAt) / 86400000))}d ago</p></div>
+          <div className="min-w-0 flex-1"><p className="truncate text-[12px] font-semibold text-[#35483a]">{item.task.title}</p><p className="mt-1 text-[10px] text-[#96a197]">{getWeekLabelForOffset(item.week)} · {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][item.day]} · {item.task.time} · Deleted {Math.max(0, Math.floor((Date.now() - item.deletedAt) / 86400000))}d ago</p></div>
           <button type="button" onClick={() => onRestore(item)} className="rounded-lg bg-[#e7f8eb] px-2.5 py-2 text-[10px] font-bold text-[#32834d] hover:bg-[#d8f3df]">Restore</button>
           <button type="button" onClick={() => onDelete(item)} aria-label={`Permanently delete ${item.task.title}`} className="rounded-lg p-2 text-[#ca716b] hover:bg-[#fff0ef]"><Icon name="trash" size={15} /></button>
         </article>) : <div className="py-10 text-center"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#f3f6f3] text-[#91a095]"><Icon name="inbox" size={20} /></span><p className="mt-3 text-[12px] font-semibold text-[#56675a]">Your trash is empty</p><p className="mt-1 text-[10px] text-[#98a49a]">Deleted tasks will show up here.</p></div>}

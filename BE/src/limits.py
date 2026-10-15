@@ -1,0 +1,11 @@
+TITLE_MAX = 200
+SUBTASK_MAX = 200
+MAX_SUBTASKS = 20
+FULL_NAME_MAX = 100
+BULK_MAX = 50
+PASSWORD_MIN = 8
+PASSWORD_MAX_BYTES = 72  # bcrypt chỉ dùng 72 byte đầu
+
+# Chống dò mật khẩu (theo IP + email)
+LOGIN_MAX_FAILS = 5
+LOGIN_WINDOW_SECONDS = 15 * 60

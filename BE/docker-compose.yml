@@ -1,4 +1,4 @@
-version: '3.8'
+
 services:
   db:
     image: postgres:15
@@ -7,8 +7,9 @@ services:
       POSTGRES_PASSWORD: todo_pass
       POSTGRES_DB: todo_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
 volumes:
   db_data:
+ 

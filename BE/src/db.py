@@ -1,27 +1,26 @@
+import os
 from typing import AsyncGenerator
+
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-import os
-from dotenv import load_dotenv
-from src.models import Base
 
 load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL") or "postgresql+asyncpg://todo_user:todo_pass@localhost:5432/todo_db"
 
-# Async engine and session factory
-engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=True, future=True)
+DATABASE_URL = os.getenv("DATABASE_URL") or (
+    "postgresql+asyncpg://todo_user:todo_pass@localhost:5433/todo_db"
+)
+SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() in ("1", "true", "yes")
+
+engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=SQL_ECHO, future=True)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
-async def init_db() -> None:
-    """Create database tables (useful for quick dev setups). Alembic should be used for migrations."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
-# Dependency for FastAPI endpoints
+# Bảng do Alembic tạo (alembic upgrade head). Không dùng create_all nữa.
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         yield session
