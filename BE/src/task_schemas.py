@@ -82,13 +82,16 @@ class TaskPatch(BaseModel):
 
 class BulkItem(BaseModel):
     title: str
-    day: int = Field(ge=0, le=6)  # 0 = thứ Hai
+    day: int = Field(ge=0, le=6)  # 0 = thứ Hai ... 6 = Chủ nhật
     time: Optional[str] = None
+    is_starred: bool = False
+    steps: list[str] = []
 
     @model_validator(mode="after")
     def _clean(self):
         self.title = clean_title(self.title)
         self.time = clean_time(self.time)
+        self.steps = clean_steps(self.steps)
         return self
 
 

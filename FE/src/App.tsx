@@ -3,13 +3,16 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { createPortal } from 'react-dom'
 
 import Icon, { type IconName } from './components/Icon'
-import { QuickAddTask, InlineTimePicker as InlineTimePickerExternal } from './components/InlineAddTask'
+import { QuickAddTask } from './components/InlineAddTask'
+import { AIBreakdownModal } from './components/AIBreakdownModal'
+import { AIPriorityModal } from './components/AIPriorityModal'
 import { PlannerTaskCard, MobileTaskCard as MobileTaskCardExternal } from './components/TaskCard'
 import { SearchDropdown } from './components/SearchDropdown'
 import { TrashBinModal as TrashBinModalExternal } from './components/TrashBinModal'
 import type { Task, BreakdownItem, Habit, OverdueTask, SearchResult } from './types'
 import * as api from './api'
 import { useAppData, type SignedOutReason } from './hooks/useAppData'
+import { sortTasksByPriorityAndTime } from './utils/aiBreakdown'
 import { localYmd, ymdToLocalDate } from './utils/dates'
 import { getWeekLabelForOffset, WEEK_ANCHOR_MONDAY } from './utils/week'
 
@@ -214,277 +217,6 @@ function HabitReviewModal({ selectedMonday, weekOffset, onClose }: { selectedMon
         <div className={`mt-4 flex flex-wrap items-center justify-between gap-3 text-[10px] ${muted}`}><span>Future days and days before a habit was created are unfilled</span><div className="flex items-center gap-1.5"><span>Less</span><span className="h-[9px] w-[9px] rounded-[3px]" style={{ backgroundColor: empty }} />{[0.45, 0.62, 0.8, 1].map(level => <span key={level} className="h-[9px] w-[9px] rounded-[3px] bg-[#34D399]" style={{ opacity: level }} />)}<span>More</span></div></div>
       </div>
     </div>
-  </div>
-}
-
-const examplePrompt = 'Prepare Q3 Revenue Presentation, Deadline: Friday 6 PM'
-const exampleSteps = ['Collect Excel data', 'Analyze revenue trends', 'Draft slide outline', 'Polish & rehearse presentation']
-
-function makeBreakdown(prompt: string, firstDay: number): BreakdownItem[] {
-  const topic = prompt.split(/,|deadline:/i)[0].trim() || 'your task'
-  const titles = /present|slide|pitch|revenue/i.test(topic)
-    ? exampleSteps
-    : ['Gather notes & resources', `Outline ${topic.toLowerCase()}`, 'Work on the first draft', 'Review & finalize']
-  return titles.map((title, index) => ({ id: index + 1, title, day: Math.min(firstDay + index, 6), time: ['10:00', '09:30', '11:00', '16:00'][index] }))
-}
-
-function InlineTimePicker({ value, onChange }: { value: string; onChange: (time: string) => void }) {
-  const [open, setOpen] = useState(false)
-  const [draftTime, setDraftTime] = useState(value || '09:00')
-  const [position, setPosition] = useState({ left: 0, top: 0 })
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  const panelWidth = 240
-  const panelHeight = 232
-
-  useLayoutEffect(() => {
-    if (!open) return
-
-    function updatePosition() {
-      const trigger = triggerRef.current
-      if (!trigger) return
-      const rect = trigger.getBoundingClientRect()
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8))
-      const top = rect.bottom + panelHeight + 8 <= window.innerHeight
-        ? rect.bottom + 8
-        : Math.max(8, rect.top - panelHeight - 8)
-      setPosition({ left, top })
-    }
-
-    updatePosition()
-    window.addEventListener('resize', updatePosition)
-    window.addEventListener('scroll', updatePosition, true)
-    return () => {
-      window.removeEventListener('resize', updatePosition)
-      window.removeEventListener('scroll', updatePosition, true)
-    }
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
-
-    function onPointerDown(event: PointerEvent) {
-      const target = event.target
-      if (!(target instanceof Node)) return
-      if (!triggerRef.current?.contains(target) && !panelRef.current?.contains(target)) setOpen(false)
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open])
-
-  function showPicker() {
-    const nextValue = value || '09:00'
-    setDraftTime(nextValue)
-    setOpen(current => !current)
-  }
-
-  function choosePart(part: 'hour' | 'minute' | 'period', selected: string) {
-    const [storedHour, storedMinute] = draftTime.split(':').map(Number)
-    const isPm = storedHour >= 12
-    const hour12 = storedHour % 12 || 12
-    const hour = part === 'hour' ? Number(selected) : hour12
-    const minute = part === 'minute' ? Number(selected) : storedMinute
-    const period = part === 'period' ? selected === 'PM' : isPm
-    const hour24 = hour % 12 + (period ? 12 : 0)
-    setDraftTime(`${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
-  }
-
-  function formatTime(time: string) {
-    if (!time) return ''
-    const [hour, minute] = time.split(':').map(Number)
-    return `${String(hour % 12 || 12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`
-  }
-
-  const [draftHour, draftMinute] = draftTime.split(':').map(Number)
-  const selectedHour = draftHour % 12 || 12
-  const selectedPeriod = draftHour >= 12 ? 'PM' : 'AM'
-  const hours = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'))
-  const minutes = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, '0'))
-
-  return <>
-    <button
-      ref={triggerRef}
-      type="button"
-      onClick={showPicker}
-      aria-label={value ? `Change task time, ${formatTime(value)}` : 'Set task time'}
-      aria-expanded={open}
-      aria-haspopup="dialog"
-      title={value ? `Task time: ${formatTime(value)}` : 'Set task time'}
-      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[10px] font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80] ${value || open ? 'bg-[#dcfce7] text-[#277343]' : 'bg-white text-[#718477] hover:bg-[#dcfce7]'}`}
-    >
-      <Icon name="clock" size={14} />
-      <span className="inline-time-picker-label whitespace-nowrap">{formatTime(value)}</span>
-    </button>
-    {open && createPortal(
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-label="Choose task time"
-        className="fixed z-[100] w-[240px] rounded-2xl border border-[#e7eee9] bg-white p-3 text-[#243c2d] shadow-[0_16px_48px_rgba(22,52,32,0.2)]"
-        style={{ left: position.left, top: position.top }}
-      >
-        <div className="mb-2 flex items-center justify-between px-1">
-          <span className="text-[11px] font-bold text-[#385140]">Choose a time</span>
-          <span className="text-[11px] font-semibold text-[#4c9b64]">{formatTime(draftTime)}</span>
-        </div>
-        <div className="grid grid-cols-[1fr_1fr_0.8fr] gap-2">
-          {[
-            { label: 'Hour', values: hours, selected: String(selectedHour).padStart(2, '0'), part: 'hour' as const },
-            { label: 'Minute', values: minutes, selected: String(draftMinute).padStart(2, '0'), part: 'minute' as const },
-            { label: 'AM/PM', values: ['AM', 'PM'], selected: selectedPeriod, part: 'period' as const },
-          ].map(column => <div key={column.part} className="min-w-0">
-            <div className="mb-1 text-center text-[9px] font-bold uppercase tracking-wide text-[#91a294]">{column.label}</div>
-            <div className="h-[112px] space-y-1 overflow-y-auto rounded-xl bg-[#f7faf7] p-1">
-              {column.values.map(option => <button
-                key={option}
-                type="button"
-                onClick={() => choosePart(column.part, option)}
-                aria-pressed={column.selected === option}
-                className={`w-full rounded-lg py-1.5 text-[11px] font-semibold transition ${column.selected === option ? 'bg-[#4ade80] text-white' : 'text-[#617467] hover:bg-[#e3f8e8]'}`}
-              >{option}</button>)}
-            </div>
-          </div>)}
-        </div>
-        <div className="mt-3 flex items-center justify-between border-t border-[#edf1ee] pt-2.5">
-          <button type="button" onClick={() => { onChange(''); setOpen(false) }} className="rounded-lg px-2 py-1.5 text-[10px] font-semibold text-[#78897d] transition hover:bg-[#fee2e2] hover:text-[#b94743]">Clear time</button>
-          <button type="button" onClick={() => { onChange(draftTime); setOpen(false) }} aria-label="Confirm task time" title="Confirm time" className="flex h-8 w-8 items-center justify-center rounded-full bg-[#4ade80] text-white transition hover:bg-[#22c55e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#339e5e]"><Icon name="check" size={16} /></button>
-        </div>
-      </div>,
-      document.body,
-    )}
-  </>
-}
-
-
-
-
-
-function BreakdownModal({ initialDay, monday, onClose, onSave }: { initialDay: number; monday: Date; onClose: () => void; onSave: (items: BreakdownItem[]) => void }) {
-  const [prompt, setPrompt] = useState(examplePrompt)
-  const [items, setItems] = useState(() => makeBreakdown(examplePrompt, initialDay))
-  const [deadline, setDeadline] = useState(() => dateForInput(addDays(monday, Math.min(initialDay + 3, 6))))
-  const [dueTime, setDueTime] = useState('16:00')
-  const [voiceMessage, setVoiceMessage] = useState('')
-  const [isListening, setIsListening] = useState(false)
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
-  function startVoiceEntry() {
-    type SpeechEngine = {
-      lang: string
-      onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
-      onerror: (() => void) | null
-      onend: (() => void) | null
-      start: () => void
-    }
-    const SpeechRecognition = (window as typeof window & { SpeechRecognition?: new () => SpeechEngine; webkitSpeechRecognition?: new () => SpeechEngine }).SpeechRecognition
-      ?? (window as typeof window & { webkitSpeechRecognition?: new () => SpeechEngine }).webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      setVoiceMessage('Voice input is unavailable here. Please type your task instead.')
-      return
-    }
-    const recognition = new SpeechRecognition()
-    recognition.lang = 'en-US'
-    recognition.onresult = event => { setPrompt(event.results[0][0].transcript); setVoiceMessage('Voice note added. Generate a new plan when ready.') }
-    recognition.onerror = () => { setIsListening(false); setVoiceMessage('Could not hear you. Try again or type your task.') }
-    recognition.onend = () => setIsListening(false)
-    try { recognition.start(); setIsListening(true); setVoiceMessage('Listening... describe your task.') }
-    catch { setVoiceMessage('Microphone access is unavailable. Please type your task instead.') }
-  }
-
-  function updateItem(id: number, changes: Partial<BreakdownItem>) {
-    setItems(current => current.map(item => item.id === id ? { ...item, ...changes } : item))
-  }
-
-  function updateDeadline(value: string) {
-    setDeadline(value)
-    const day = dayNames.findIndex((_, index) => dateForInput(addDays(monday, index)) === value)
-    if (day !== -1) setItems(current => current.map((item, index) => index === current.length - 1 ? { ...item, day } : item))
-  }
-
-  function updateDueTime(value: string) {
-    setDueTime(value)
-    setItems(current => current.map((item, index) => index === current.length - 1 ? { ...item, time: value } : item))
-  }
-
-  return <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-    <motion.div
-      aria-hidden="true"
-      className="absolute inset-0 bg-black backdrop-blur-sm"
-      onMouseDown={onClose}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 0.4 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
-    />
-    <motion.div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="breakdown-title"
-      className="relative my-auto flex max-h-[calc(100dvh-32px)] w-full max-w-[620px] flex-col overflow-hidden rounded-[22px] border border-white/70 bg-white shadow-[0_30px_90px_rgba(9,37,21,0.28)]"
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
-    >
-      <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#ecf1eb] px-5 py-5 sm:px-7 sm:py-6">
-        <div className="flex items-start gap-3.5"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] bg-[#e5f8e9] text-[#2eae60]"><Icon name="sparkle" size={23} /></div><div><div className="mb-1 text-[10px] font-bold uppercase tracking-[0.17em] text-[#66b97d]">TURN IDEAS INTO ACTION</div><h2 id="breakdown-title" className="text-[21px] font-bold tracking-[-0.045em] text-[#1b3325] sm:text-[23px]">AI Task Breakdown</h2><p className="mt-1 text-[12px] leading-relaxed text-[#8b9b8e]">A clear plan, one small step at a time.</p></div></div>
-        <button type="button" onClick={onClose} aria-label="Close task breakdown" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-[#e9eee9] text-[#77897b] transition hover:bg-[#f4f8f4] hover:text-[#2e573a]"><Icon name="close" size={17} /></button>
-      </div>
-
-      <div className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
-        <div className="mb-3 flex items-center justify-between"><label htmlFor="task-prompt" className="text-[12px] font-bold text-[#344c3b]">What are you working on?</label><span className="text-[10px] font-medium text-[#9ba99d]">YOUR BIG IDEA</span></div>
-        <div className="relative rounded-[14px] border border-[#dfeae0] bg-[#fbfdf9] transition focus-within:border-[#67d78a] focus-within:ring-[3px] focus-within:ring-[#4ade80]/10">
-          <textarea id="task-prompt" value={prompt} onChange={event => setPrompt(event.target.value)} placeholder="Prepare Q3 Revenue Presentation, Deadline: Friday 6 PM" rows={2} className="w-full resize-none bg-transparent px-4 pb-12 pt-4 text-[13px] font-medium leading-relaxed text-[#38503e] outline-none placeholder:text-[#a6b2a5]" />
-          <div className="absolute bottom-3 left-4 text-[10px] text-[#a0afa3]">Describe your big goal to get started</div>
-          <button type="button" onClick={startVoiceEntry} disabled={isListening} aria-label={isListening ? 'Listening for voice input' : 'Use voice input'} title="Use voice input" className="absolute bottom-2.5 right-3 flex h-8 w-8 items-center justify-center rounded-[9px] bg-[#e8f8ec] text-[#39ad64] transition hover:bg-[#d9f3e0] disabled:opacity-60"><Icon name="mic" size={17} /></button>
-        </div>
-        {voiceMessage && <p role="status" className="mt-2 text-[11px] text-[#718b78]">{voiceMessage}</p>}
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <label className="text-[11px] font-bold text-[#344c3b]">Target completion date <input type="date" value={deadline} min={dateForInput(monday)} max={dateForInput(addDays(monday, 6))} onChange={event => updateDeadline(event.target.value)} className="mt-1.5 w-full rounded-[10px] border border-[#dfeae0] bg-[#fbfdf9] px-2 py-2.5 text-[12px] font-medium text-[#38503e] outline-none focus:border-[#4ade80]" /></label>
-          <label className="text-[11px] font-bold text-[#344c3b]">Due time <input type="time" value={dueTime} onChange={event => updateDueTime(event.target.value)} className="mt-1.5 w-full rounded-[10px] border border-[#dfeae0] bg-[#fbfdf9] px-2 py-2.5 text-[12px] font-medium text-[#38503e] outline-none focus:border-[#4ade80]" /></label>
-        </div>
-        <p className="mt-2 text-[10px] text-[#92a297]">Choose a day in this week. The deadline sets the final step's day and time.</p>
-        <div className="mt-3 flex items-center justify-between gap-2"><p className="text-[11px] leading-snug text-[#92a297]">Adjust every step before adding it to your week.</p><button type="button" onClick={() => { const next = makeBreakdown(prompt, initialDay); const day = dayNames.findIndex((_, index) => dateForInput(addDays(monday, index)) === deadline); next[next.length - 1] = { ...next[next.length - 1], day: day < 0 ? initialDay : day, time: dueTime }; setItems(next) }} disabled={!prompt.trim()} className="flex shrink-0 items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-[11px] font-bold text-[#319653] hover:bg-[#edf9ef] disabled:opacity-40"><Icon name="refresh" size={14} /> Regenerate</button></div>
-
-        <div className="mt-6 rounded-[16px] border border-[#e8f1e9] bg-[#f6faf6] p-3 sm:p-4">
-          <div className="mb-3 flex items-center justify-between px-1"><div className="flex items-center gap-2"><Icon name="sparkle" size={16} className="text-[#48bf72]" /><h3 className="text-[12px] font-bold text-[#31513b]">Your suggested plan</h3></div><span className="rounded-full bg-[#e5f6e9] px-2.5 py-1 text-[10px] font-bold text-[#489b61]">{items.length} STEPS</span></div>
-          <div className="space-y-2">
-            {items.map((item, index) => <div key={item.id} className="flex items-start gap-2.5 rounded-[11px] border border-[#e8efe8] bg-white p-3 shadow-[0_2px_8px_rgba(35,77,42,0.035)] sm:gap-3 sm:p-3.5">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[#edf9ef] text-[11px] font-bold text-[#43a965]">{String(index + 1).padStart(2, '0')}</span>
-              <div className="min-w-0 flex-1 space-y-2">
-                <input id={`step-title-${item.id}`} value={item.title} onChange={event => updateItem(item.id, { title: event.target.value })} aria-label={`Title for step ${index + 1}`} className="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-[12px] font-semibold text-[#34483a] outline-none hover:border-[#d9e9dd] focus:border-[#4ade80] sm:text-[13px]" />
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <select value={item.day} onChange={event => updateItem(item.id, { day: Number(event.target.value) })} aria-label={`Day for step ${index + 1}`} className="max-w-[120px] rounded-lg border border-[#dcebdd] bg-[#f1faf2] px-1.5 py-1 text-[10px] font-bold text-[#4d9a60] outline-none focus:border-[#4ade80]">{dayNames.map((day, dayIndex) => <option key={day} value={dayIndex}>{day}</option>)}</select>
-                  <label className="flex items-center gap-1 rounded-lg border border-[#dcebdd] bg-[#f8fcf8] px-1.5 py-1 text-[#75a783]"><Icon name="clock" size={12} /><input type="time" value={item.time} onChange={event => updateItem(item.id, { time: event.target.value })} aria-label={`Time for step ${index + 1}`} className="w-[85px] bg-transparent text-[10px] font-bold text-[#4d9a60] outline-none" /></label>
-                </div>
-              </div>
-              <div className="flex shrink-0 flex-col items-center gap-1 border-l border-[#edf1ec] pl-2 sm:flex-row"><button type="button" onClick={() => document.getElementById(`step-title-${item.id}`)?.focus()} aria-label={`Edit ${item.title}`} className="flex h-7 w-7 items-center justify-center rounded-lg text-[#95a79a] hover:bg-[#eef8ef] hover:text-[#319454]"><Icon name="edit" size={14} /></button><button type="button" onClick={() => setItems(current => current.filter(step => step.id !== item.id))} aria-label={`Delete ${item.title}`} className="flex h-7 w-7 items-center justify-center rounded-lg text-[#a2aea4] hover:bg-[#fff0ef] hover:text-[#cb706b]"><Icon name="trash" size={14} /></button></div>
-            </div>)}
-            {items.length === 0 && <p className="rounded-xl bg-white px-4 py-6 text-center text-[12px] text-[#8d9e90]">No steps yet. Regenerate a plan to start again.</p>}
-          </div>
-        </div>
-        <p className="mt-3 flex items-center gap-1.5 text-[10px] text-[#98a99b]"><Icon name="sparkle" size={13} className="text-[#65bb7c]" /> Suggested steps are a starting point — make this plan yours.</p>
-      </div>
-
-      <div className="flex shrink-0 items-center justify-end gap-2.5 border-t border-[#ecf1eb] bg-white px-5 py-4 sm:px-7"><button type="button" onClick={onClose} className="rounded-[10px] border border-[#e3eae4] bg-white px-4 py-2.5 text-[12px] font-bold text-[#617467] transition hover:bg-[#f5f8f5]">Cancel</button><button type="button" onClick={() => onSave(items.filter(item => item.title.trim()))} disabled={!items.some(item => item.title.trim())} className="flex items-center justify-center gap-2 rounded-[10px] bg-[#4ade80] px-4 py-2.5 text-[12px] font-bold text-[#174f2e] shadow-[0_5px_12px_rgba(74,222,128,0.2)] transition hover:bg-[#37d973] disabled:cursor-not-allowed disabled:opacity-50"><Icon name="check" size={15} /> Save to Weekly Schedule</button></div>
-    </motion.div>
   </div>
 }
 
@@ -774,6 +506,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
   const { toggleTask, updateTaskTitle, toggleTaskStar, toggleHabit, addHabit, updateHabit, removeHabit, reorderHabit, moveTask, carryOverdue, dismissTask, restoreTask, undoDelete, permanentlyDeleteTask } = data
   const [habitModalOpen, setHabitModalOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [priorityModalOpen, setPriorityModalOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showHabits, setShowHabits] = useState(true)
@@ -799,7 +532,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
   const doneCount = tasks.filter(task => task.done).length
   const percent = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0
   const selectedDate = addDays(monday, selectedDay)
-  const selectedTasks = tasks.filter(task => getTaskDay(task.id) === selectedDay)
+  const selectedTasks = sortTasksByPriorityAndTime(tasks.filter(task => getTaskDay(task.id) === selectedDay))
   const selectedDone = selectedTasks.filter(task => task.done).length
   const selectedPercent = selectedTasks.length ? Math.round(selectedDone / selectedTasks.length * 100) : 0
   const dayOrder = weekStartsSunday ? [6, 0, 1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6]
@@ -815,12 +548,14 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
   const completedCurrentMatches = matchingTasks.filter(result => result.week === weekOffset && result.task.done).sort((a, b) => (b.task.completedAt ?? 0) - (a.task.completedAt ?? 0))
   const completedOtherMatches = matchingTasks.filter(result => result.week !== weekOffset && result.task.done).sort((a, b) => (b.task.completedAt ?? 0) - (a.task.completedAt ?? 0))
 
-  function addQuickTask(day: number, title: string, time: string) {
-    void data.addTask(day, title, time).then(ok => { if (ok) setQuickAddDay(null) })
+  function addQuickTask(day: number, title: string, time: string, starred = false) {
+    void data.addTask(day, title, time, starred).then(ok => { if (ok) setQuickAddDay(null) })
   }
 
-  function saveBreakdown(items: BreakdownItem[]) {
-    void data.saveBreakdown(items).then(ok => { if (ok) setModalOpen(false) })
+  async function saveBreakdown(items: BreakdownItem[]): Promise<boolean> {
+    const ok = await data.saveBreakdown(items)
+    if (ok) setModalOpen(false)
+    return ok
   }
 
   async function handleLogout() {
@@ -858,6 +593,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
               <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="Search tasks or time..." aria-label="Search tasks" className="h-10 w-full rounded-xl border border-[#e2e8f0] bg-white pl-9 pr-3 text-[11px] text-[#334e3c] outline-none focus:border-[#62d786] focus:ring-2 focus:ring-[#4ade80]/15" />
               <SearchDropdown query={searchQuery} current={currentMatches} other={otherMatches} completedCurrent={completedCurrentMatches} completedOther={completedOtherMatches} onSelect={result => { setWeekOffset(result.week); setSelectedDay(result.day); setSearchQuery(''); document.getElementById(`day-${result.day}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }} />
             </div>
+            <button type="button" onClick={() => setPriorityModalOpen(true)} aria-label="View AI priority suggestions" title="AI Priority Suggestions (Prototype)" className="flex h-10 shrink-0 items-center gap-1 rounded-xl border border-[#f5d88c] bg-[#fff9e8] px-2.5 text-[10px] font-bold text-[#9a6d12]"><Icon name="sparkle" size={13} />Priority</button>
             <button type="button" onClick={() => setFocusMode(value => !value)} aria-pressed={focusMode} className={`flex h-10 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[10px] font-bold ${focusMode ? 'border-[#f5cf76] bg-[#fff8e7] text-[#9a6d12]' : 'border-[#e2e8f0] bg-white text-[#64776c]'}`}><Icon name="star" size={14} className={focusMode ? 'fill-current' : ''} />Focus</button>
           </div>
           <div className="rounded-2xl border border-[#e9f0e7] bg-white p-3.5 shadow-[0_8px_24px_rgba(31,65,39,0.045)]">
@@ -874,7 +610,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
           <div className="space-y-3">
             {selectedTasks.length === 0 && <div className="rounded-2xl border border-[#eaf0e8] bg-white px-5 py-10 text-center"><div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#eaf9ed] text-[#55b472]"><Icon name="list" size={22} /></div><p className="text-[14px] font-semibold text-[#355440]">A little breathing room.</p><p className="mt-1 text-[12px] text-[#8a9b8d]">Tap the button below to add your first task.</p></div>}
             {selectedTasks.map(task => <MobileTaskCardExternal key={task.id} task={task} focusMode={focusMode} onToggle={() => toggleTask(task.id)} onToggleStar={() => toggleTaskStar(task.id)} onDelete={() => dismissTask(weekOffset, task.id)} onReschedule={() => moveTask(weekOffset, task.id, selectedDay === 6 ? weekOffset + 1 : weekOffset, selectedDay === 6 ? 0 : selectedDay + 1)} />)}
-            {quickAddDay === selectedDay ? <QuickAddTask key={`mobile-${weekOffset}-${selectedDay}`} day={dayNames[selectedDay]} onCancel={() => setQuickAddDay(null)} onAdd={(title, time) => addQuickTask(selectedDay, title, time)} /> : <button type="button" onClick={() => setQuickAddDay(selectedDay)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#bcdcc4] bg-[#f5fbf6] py-3.5 text-[12px] font-bold text-[#459661]"><Icon name="plus" size={16} /> Add task for today</button>}
+            {quickAddDay === selectedDay ? <QuickAddTask key={`mobile-${weekOffset}-${selectedDay}`} day={dayNames[selectedDay]} onCancel={() => setQuickAddDay(null)} onAdd={(title, time, starred) => addQuickTask(selectedDay, title, time, starred)} /> : <button type="button" onClick={() => setQuickAddDay(selectedDay)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#bcdcc4] bg-[#f5fbf6] py-3.5 text-[12px] font-bold text-[#459661]"><Icon name="plus" size={16} /> Add task for today</button>}
           </div>
           {selectedTasks.length > 0 && <p className="mt-5 text-center text-[10px] font-medium text-[#9aad9c]">Swipe right to complete · Swipe left for actions</p>}
 
@@ -904,6 +640,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
             <SearchDropdown query={searchQuery} current={currentMatches} other={otherMatches} completedCurrent={completedCurrentMatches} completedOther={completedOtherMatches} onSelect={result => { setWeekOffset(result.week); setSelectedDay(result.day); setSearchQuery(''); document.getElementById(`day-${result.day}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }) }} />
           </div>
           <button type="button" onClick={() => setFocusMode(value => !value)} aria-pressed={focusMode} className={`flex h-10 items-center gap-1.5 rounded-[10px] border px-2 text-[11px] font-bold transition ${focusMode ? 'border-[#f5cf76] bg-[#fff8e7] text-[#9a6d12]' : 'border-[#e8eeea] bg-white text-[#64776c] hover:bg-[#f4faf5]'}`}><Icon name="star" size={14} className={focusMode ? 'fill-current' : ''} /><span className="hidden xl:inline">Focus Mode</span></button>
+          <button type="button" onClick={() => setPriorityModalOpen(true)} className="flex h-10 items-center gap-1.5 rounded-[10px] border border-[#f5d88c] bg-[#fff9e8] px-3 text-[12px] font-bold text-[#9a6d12] transition hover:bg-[#fef2cf]" title="View AI priority suggestions (Prototype)"><Icon name="sparkle" size={15} /><span className="hidden xl:inline">AI Priority</span></button>
           <button onClick={() => { setNewDay(1); setModalOpen(true) }} className="flex h-10 items-center gap-2 rounded-[10px] bg-[#4ade80] px-4 text-[13px] font-bold text-[#14492b] shadow-[0_4px_12px_rgba(74,222,128,0.2)] transition hover:bg-[#36d871]"><Icon name="plus" size={17} /> <span className="hidden sm:inline">Add Task with AI</span><span className="sm:hidden">Add Task</span></button>
           <div className="relative">
             <button onClick={() => setSettingsOpen(value => !value)} aria-label="Settings" aria-expanded={settingsOpen} className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#e8eeea] text-[#64776c] hover:bg-[#f4faf5]"><Icon name="settings" size={19} /></button>
@@ -952,7 +689,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
         <div className="grid min-w-[1190px] grid-cols-7 gap-3.5 lg:gap-4">
           {dayOrder.map(index => {
             const day = dayNames[index]
-            const dayTasks = tasks.filter(task => getTaskDay(task.id) === index)
+            const dayTasks = sortTasksByPriorityAndTime(tasks.filter(task => getTaskDay(task.id) === index))
             const complete = dayTasks.filter(task => task.done).length
             const dayPercent = dayTasks.length ? Math.round(complete / dayTasks.length * 100) : 0
             const date = addDays(monday, index)
@@ -1015,7 +752,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
               </div>
               <div className="mt-auto pt-3">
                 {quickAddDay === index
-                  ? <QuickAddTask key={`${weekOffset}-${index}`} day={day} onCancel={() => setQuickAddDay(null)} onAdd={(title, time) => addQuickTask(index, title, time)} />
+                  ? <QuickAddTask key={`${weekOffset}-${index}`} day={day} onCancel={() => setQuickAddDay(null)} onAdd={(title, time, starred) => addQuickTask(index, title, time, starred)} />
                   : <button type="button" onClick={() => setQuickAddDay(index)} className="flex w-full items-center justify-center gap-1 rounded-[9px] border border-dashed border-[#d7e8da] py-2 text-[10px] font-semibold text-[#7baa85] transition hover:border-[#4ade80] hover:bg-[#f4fbf5] hover:text-[#318d52]"><Icon name="plus" size={13} /> Add task</button>}
               </div>
             </section>
@@ -1027,7 +764,20 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
     </div>
 
     <AnimatePresence>
-    {modalOpen && <BreakdownModal initialDay={newDay} monday={monday} onClose={() => setModalOpen(false)} onSave={saveBreakdown} />}
+      {modalOpen && <AIBreakdownModal initialDay={newDay} monday={monday} onClose={() => setModalOpen(false)} onSave={saveBreakdown} />}
+    </AnimatePresence>
+    <AnimatePresence>
+      {priorityModalOpen && (
+        <AIPriorityModal
+          weekOffset={weekOffset}
+          todayWeek={currentWeek}
+          todayDay={todayDay}
+          tasks={tasks}
+          getTaskDay={getTaskDay}
+          onClose={() => setPriorityModalOpen(false)}
+          onConfirmStars={data.applyPriorityStars}
+        />
+      )}
     </AnimatePresence>
     <AnimatePresence>
       {trashOpen && <TrashBinModalExternal items={deletedTasks} onClose={() => setTrashOpen(false)} onRestore={restoreTask} onDelete={permanentlyDeleteTask} />}
