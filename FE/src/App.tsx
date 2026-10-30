@@ -7,6 +7,8 @@ import { QuickAddTask, InlineTimePicker as InlineTimePickerExternal } from './co
 import { PlannerTaskCard, MobileTaskCard as MobileTaskCardExternal } from './components/TaskCard'
 import { SearchDropdown } from './components/SearchDropdown'
 import { TrashBinModal as TrashBinModalExternal } from './components/TrashBinModal'
+import { useNotification } from './hooks/useNotification'
+import { AIWeeklyReviewModal } from './components/AIWeeklyReviewModal'
 import type { Task, DeletedTask, BreakdownItem, Habit, OverdueTask, SearchResult } from './types'
 
 const startMonday = new Date(2026, 8, 28)
@@ -397,10 +399,6 @@ function InlineTimePicker({ value, onChange }: { value: string; onChange: (time:
     )}
   </>
 }
-
-
-
-
 
 function BreakdownModal({ initialDay, monday, onClose, onSave }: { initialDay: number; monday: Date; onClose: () => void; onSave: (items: BreakdownItem[]) => void }) {
   const [prompt, setPrompt] = useState(examplePrompt)
@@ -828,6 +826,9 @@ export default function App() {
   const [selectedDay, setSelectedDay] = useState(1)
   const [addedDays, setAddedDays] = useState<Record<number, number>>({})
 
+  // US-36: State bật/tắt Modal Báo cáo AI
+  const [isAIWeeklyOpen, setIsAIWeeklyOpen] = useState(false)
+
   useEffect(() => () => {
     if (undoTimeout.current) clearTimeout(undoTimeout.current)
   }, [])
@@ -840,6 +841,10 @@ export default function App() {
   today.setHours(0, 0, 0, 0)
   const currentWeek = weekOffsetForDate(today)
   const todayDay = (today.getDay() + 6) % 7
+
+  // US-28: Lắng nghe thông báo Windows & tổng kết 20:00
+  useNotification(tasks)
+
   const overdue: OverdueTask[] = Object.entries(tasksByWeek).flatMap(([offset, weekTasks]) => weekTasks.flatMap(task => {
     const week = Number(offset)
     const day = getTaskDay(task.id)
@@ -978,9 +983,10 @@ export default function App() {
     setModalOpen(false)
   }
 
-  function addQuickTask(day: number, title: string, time: string) {
+  // US-27: Cập nhật hàm nhận thêm giờ nhắc nhở (reminderTime)
+  function addQuickTask(day: number, title: string, time: string, reminderTime?: string) {
     const id = Date.now()
-    setTasksByWeek(current => ({ ...current, [weekOffset]: [...(current[weekOffset] ?? []), { id, title, time, done: false, category: 'personal' }] }))
+    setTasksByWeek(current => ({ ...current, [weekOffset]: [...(current[weekOffset] ?? []), { id, title, time, reminderTime, done: false, category: 'personal' }] }))
     setAddedDays(current => ({ ...current, [id]: day }))
     setQuickAddDay(null)
   }
@@ -1052,7 +1058,9 @@ export default function App() {
           <div className="space-y-3">
             {selectedTasks.length === 0 && <div className="rounded-2xl border border-[#eaf0e8] bg-white px-5 py-10 text-center"><div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#eaf9ed] text-[#55b472]"><Icon name="list" size={22} /></div><p className="text-[14px] font-semibold text-[#355440]">A little breathing room.</p><p className="mt-1 text-[12px] text-[#8a9b8d]">Tap the button below to add your first task.</p></div>}
             {selectedTasks.map(task => <MobileTaskCardExternal key={task.id} task={task} focusMode={focusMode} onToggle={() => toggleTask(task.id)} onToggleStar={() => toggleTaskStar(task.id)} onDelete={() => dismissTask(weekOffset, task.id)} onReschedule={() => moveTask(weekOffset, task.id, selectedDay === 6 ? weekOffset + 1 : weekOffset, selectedDay === 6 ? 0 : selectedDay + 1)} />)}
-            {quickAddDay === selectedDay ? <QuickAddTask key={`mobile-${weekOffset}-${selectedDay}`} day={dayNames[selectedDay]} onCancel={() => setQuickAddDay(null)} onAdd={(title, time) => addQuickTask(selectedDay, title, time)} /> : <button type="button" onClick={() => setQuickAddDay(selectedDay)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#bcdcc4] bg-[#f5fbf6] py-3.5 text-[12px] font-bold text-[#459661]"><Icon name="plus" size={16} /> Add task for today</button>}
+            
+            {/* US-27: Ô tạo task ở bản Mobile */}
+            {quickAddDay === selectedDay ? <QuickAddTask key={`mobile-${weekOffset}-${selectedDay}`} day={dayNames[selectedDay]} onCancel={() => setQuickAddDay(null)} onAdd={(title, time, reminderTime) => addQuickTask(selectedDay, title, time, reminderTime)} /> : <button type="button" onClick={() => setQuickAddDay(selectedDay)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#bcdcc4] bg-[#f5fbf6] py-3.5 text-[12px] font-bold text-[#459661]"><Icon name="plus" size={16} /> Add task for today</button>}
           </div>
           {selectedTasks.length > 0 && <p className="mt-5 text-center text-[10px] font-medium text-[#9aad9c]">Swipe right to complete · Swipe left for actions</p>}
 
@@ -1082,6 +1090,10 @@ export default function App() {
             <SearchDropdown query={searchQuery} current={currentMatches} other={otherMatches} completedCurrent={completedCurrentMatches} completedOther={completedOtherMatches} onSelect={result => { setWeekOffset(result.week); setSelectedDay(result.day); setSearchQuery(''); document.getElementById(`day-${result.day}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }) }} />
           </div>
           <button type="button" onClick={() => setFocusMode(value => !value)} aria-pressed={focusMode} className={`flex h-10 items-center gap-1.5 rounded-[10px] border px-2 text-[11px] font-bold transition ${focusMode ? 'border-[#f5cf76] bg-[#fff8e7] text-[#9a6d12]' : 'border-[#e8eeea] bg-white text-[#64776c] hover:bg-[#f4faf5]'}`}><Icon name="star" size={14} className={focusMode ? 'fill-current' : ''} /><span className="hidden xl:inline">Focus Mode</span></button>
+          
+          {/* US-36 & US-37: Nút mở Modal Báo cáo AI */}
+          <button type="button" onClick={() => setIsAIWeeklyOpen(true)} className="flex h-10 items-center gap-2 rounded-[10px] bg-emerald-600 px-3.5 text-[12px] font-bold text-white shadow-[0_4px_12px_rgba(16,185,129,0.2)] transition hover:bg-emerald-700">📊 <span className="hidden sm:inline">AI Weekly Review</span></button>
+
           <button onClick={() => { setNewDay(1); setModalOpen(true) }} className="flex h-10 items-center gap-2 rounded-[10px] bg-[#4ade80] px-4 text-[13px] font-bold text-[#14492b] shadow-[0_4px_12px_rgba(74,222,128,0.2)] transition hover:bg-[#36d871]"><Icon name="plus" size={17} /> <span className="hidden sm:inline">Add Task with AI</span><span className="sm:hidden">Add Task</span></button>
           <div className="relative">
             <button onClick={() => setSettingsOpen(value => !value)} aria-label="Settings" aria-expanded={settingsOpen} className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#e8eeea] text-[#64776c] hover:bg-[#f4faf5]"><Icon name="settings" size={19} /></button>
@@ -1192,8 +1204,9 @@ export default function App() {
                 />)}
               </div>
               <div className="mt-auto pt-3">
+                {/* US-27: Ô tạo task ở bản Desktop */}
                 {quickAddDay === index
-                  ? <QuickAddTask key={`${weekOffset}-${index}`} day={day} onCancel={() => setQuickAddDay(null)} onAdd={(title, time) => addQuickTask(index, title, time)} />
+                  ? <QuickAddTask key={`${weekOffset}-${index}`} day={day} onCancel={() => setQuickAddDay(null)} onAdd={(title, time, reminderTime) => addQuickTask(index, title, time, reminderTime)} />
                   : <button type="button" onClick={() => setQuickAddDay(index)} className="flex w-full items-center justify-center gap-1 rounded-[9px] border border-dashed border-[#d7e8da] py-2 text-[10px] font-semibold text-[#7baa85] transition hover:border-[#4ade80] hover:bg-[#f4fbf5] hover:text-[#318d52]"><Icon name="plus" size={13} /> Add task</button>}
               </div>
             </section>
@@ -1215,5 +1228,8 @@ export default function App() {
     </AnimatePresence>
     {habitModalOpen && <HabitManagementModal habits={habitDefinitions} onAdd={addHabit} onUpdate={updateHabit} onRemove={removeHabit} onReorder={reorderHabit} onClose={() => setHabitModalOpen(false)} />}
     {reviewOpen && <HabitReviewModal selectedMonday={monday} onClose={() => setReviewOpen(false)} />}
+
+    {/* US-36 & US-37: Cửa sổ Modal Báo cáo AI Tuần */}
+    <AIWeeklyReviewModal tasks={tasks} isOpen={isAIWeeklyOpen} onClose={() => setIsAIWeeklyOpen(false)} />
   </div>
 }

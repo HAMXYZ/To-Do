@@ -148,19 +148,64 @@ export function InlineTimePicker({ value, onChange }: { value: string; onChange:
   )
 }
 
-export function QuickAddTask({ day, onCancel, onAdd }: { day: string; onCancel: () => void; onAdd: (title: string, time: string) => void }) {
+export function QuickAddTask({ day, onCancel, onAdd }: { day: string; onCancel: () => void; onAdd: (title: string, time: string, reminderTime?: string) => void }) {
   const [title, setTitle] = useState('')
   const [time, setTime] = useState('09:00')
+  
+  const [reminderTime, setReminderTime] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
 
-  return <form onSubmit={event => { event.preventDefault(); if (title.trim()) onAdd(title.trim(), time) }} className="mt-3 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-[#a9e9ba] bg-white p-2 shadow-sm">
-    <label className="mb-1.5 block px-1 text-[10px] font-bold text-[#4e8260]">NEW TASK · {day.toUpperCase()}</label>
+  
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!title.trim()) return;
+
+    if (reminderTime) {
+      const now = new Date();
+      const [rHours, rMinutes] = reminderTime.split(':').map(Number);
+      const reminderDate = new Date();
+      reminderDate.setHours(rHours, rMinutes, 0, 0);
+
+      if (reminderDate < now) {
+        setErrorMsg('Thời gian nhắc nhở phải ở tương lai!');
+        return;
+      }
+    }
+
+    setErrorMsg('');
+    onAdd(title.trim(), time, reminderTime || undefined);
+    setTitle('');
+    setReminderTime('');
+  };
+
+  return <form onSubmit={handleSubmit}>
+    <label className="mb-1.5 block px-1 text-[10px] font-bold text-[#04e8260]">{`NEW TASK - ${day.toUpperCase()}`}</label>
     <div className="w-full min-w-0 rounded-xl bg-white">
-      <input autoFocus required value={title} onChange={event => setTitle(event.target.value)} placeholder="Enter task name..." aria-label={`Task name for ${day}`} className="block h-9 w-full min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[11px] text-[#243c2d] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80] focus:ring-1 focus:ring-[#4ade80]/30" />
+      <input autoFocus required value={title} onChange={event => { setTitle(event.target.value); if (errorMsg) setErrorMsg(''); }} placeholder="Enter task name..." className="block h-9 w-full min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[11px] text-[#243c2d] outline-none focus:ring-1 focus:ring-[#4ade80]/30" />
+      
+
+      {errorMsg && <p className="mt-1 text-[10px] font-semibold text-red-500 px-1">{errorMsg}</p>}
+
       <div className="inline-time-picker-bar mt-1.5 flex w-full min-w-0 items-center justify-between gap-1">
-        <InlineTimePicker value={time} onChange={setTime} />
+        <div className="flex items-center gap-2">
+      
+          <InlineTimePicker value={time} onChange={setTime} />
+
+          <div className="flex items-center gap-1 text-[10px] text-gray-500">
+            <span>⏰ Nhắc:</span>
+            <input
+              type="time"
+              value={reminderTime}
+              onChange={(e) => setReminderTime(e.target.value)}
+              className="h-6 rounded border border-gray-200 bg-gray-50 px-1 text-[10px] text-gray-700 outline-none"
+              title="Chọn giờ nhắc nhở"
+            />
+          </div>
+        </div>
+
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <button type="button" onClick={onCancel} aria-label="Cancel new task" title="Cancel" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#829087] transition hover:bg-[#fff0ef] hover:text-[#b94743] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80]"><Icon name="close" size={15} /></button>
-          <button type="submit" aria-label="Save new task" title="Save task" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4ade80] text-white transition hover:bg-[#22c55e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#339e5e]"><Icon name="check" size={16} /></button>
+          <button type="button" onClick={onCancel} aria-label="Cancel new task" title="Cancel" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50">Cancel</button>
+          <button type="submit" aria-label="Save new task" title="Save task" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#04e8260] text-white hover:bg-[#3f6a4e]">Save</button>
         </div>
       </div>
     </div>
