@@ -1,7 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from './Icon'
-import type { BreakdownItem } from '../types'
 
 export function InlineTimePicker({ value, onChange }: { value: string; onChange: (time: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -148,16 +147,37 @@ export function InlineTimePicker({ value, onChange }: { value: string; onChange:
   )
 }
 
-export function QuickAddTask({ day, onCancel, onAdd }: { day: string; onCancel: () => void; onAdd: (title: string, time: string) => void }) {
+export function QuickAddTask({
+  day,
+  onCancel,
+  onAdd,
+}: {
+  day: string
+  onCancel: () => void
+  onAdd: (title: string, time: string, starred?: boolean) => void
+}) {
   const [title, setTitle] = useState('')
   const [time, setTime] = useState('09:00')
+  const [starred, setStarred] = useState(false)
 
-  return <form onSubmit={event => { event.preventDefault(); if (title.trim()) onAdd(title.trim(), time) }} className="mt-3 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-[#a9e9ba] bg-white p-2 shadow-sm">
+  return <form onSubmit={event => { event.preventDefault(); if (title.trim()) onAdd(title.trim(), time, starred) }} className="mt-3 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-[#a9e9ba] bg-white p-2 shadow-sm">
     <label className="mb-1.5 block px-1 text-[10px] font-bold text-[#4e8260]">NEW TASK · {day.toUpperCase()}</label>
     <div className="w-full min-w-0 rounded-xl bg-white">
       <input autoFocus required value={title} onChange={event => setTitle(event.target.value)} placeholder="Enter task name..." aria-label={`Task name for ${day}`} className="block h-9 w-full min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[11px] text-[#243c2d] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80] focus:ring-1 focus:ring-[#4ade80]/30" />
       <div className="inline-time-picker-bar mt-1.5 flex w-full min-w-0 items-center justify-between gap-1">
-        <InlineTimePicker value={time} onChange={setTime} />
+        <div className="flex items-center gap-1">
+          <InlineTimePicker value={time} onChange={setTime} />
+          <button
+            type="button"
+            onClick={() => setStarred(current => !current)}
+            aria-label={starred ? 'Remove priority star' : 'Mark new task as priority'}
+            aria-pressed={starred}
+            title={starred ? 'Priority task (⭐)' : 'Mark as priority (⭐)'}
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${starred ? 'bg-[#fff7e0] text-[#f59e0b]' : 'text-[#b5c2b7] hover:bg-[#fff9eb] hover:text-[#f59e0b]'}`}
+          >
+            <Icon name="star" size={14} className={starred ? 'fill-current' : ''} />
+          </button>
+        </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <button type="button" onClick={onCancel} aria-label="Cancel new task" title="Cancel" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#829087] transition hover:bg-[#fff0ef] hover:text-[#b94743] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80]"><Icon name="close" size={15} /></button>
           <button type="submit" aria-label="Save new task" title="Save task" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4ade80] text-white transition hover:bg-[#22c55e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#339e5e]"><Icon name="check" size={16} /></button>

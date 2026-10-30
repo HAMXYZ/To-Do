@@ -100,7 +100,13 @@ def _active(user: User):
 
 
 def _order():
-    return (Task.due_date, Task.due_time.nulls_last(), Task.id)
+    return (
+        Task.due_date,
+        Task.is_completed.asc(),
+        Task.is_starred.desc(),
+        Task.due_time.nulls_last(),
+        Task.id,
+    )
 
 
 async def _purge(session: AsyncSession, task: Task) -> None:
@@ -163,7 +169,7 @@ async def search_tasks(
     ).all()
     pending = [t for t in tasks if not t.is_completed]
     done = [t for t in tasks if t.is_completed]
-    pending.sort(key=lambda t: (t.due_date, t.due_time is None, t.due_time or time_type.min, t.id))
+    pending.sort(key=lambda t: (t.due_date, not t.is_starred, t.due_time is None, t.due_time or time_type.min, t.id))
     floor = datetime.min.replace(tzinfo=timezone.utc)
     done.sort(key=lambda t: t.completed_at or floor, reverse=True)
     return await _outs(session, (pending + done)[:100])
@@ -247,23 +253,45 @@ async def bulk_create(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    """US-30: Lưu hàng loạt các bước phân rã đã được người dùng chỉnh sửa và xác nhận.
+    Đánh dấu is_ai_generated=True, quy đổi day (0..6) theo tuần ISO đang xem, hỗ trợ is_starred và steps.
+    """
     try:
         monday = date.fromisocalendar(body.iso_year, body.iso_week, 1)
     except ValueError:
         raise HTTPException(422, "Tuần ISO không hợp lệ")
-    tasks = [
-        Task(
+
+    created_pairs: list[tuple[Task, list[str]]] = []
+    for item in body.items:
+        due = monday + timedelta(days=item.day)
+        task = Task(
             user_id=user.id,
             title=item.title,
-            due_date=monday + timedelta(days=item.day),
+            due_date=due,
             due_time=_parse_time(item.time),
+            is_starred=item.is_starred,
             is_ai_generated=True,
         )
-        for item in body.items
-    ]
-    session.add_all(tasks)
+        session.add(task)
+        created_pairs.append((task, list(item.steps)))
+
+    await session.flush()
+    for task, steps in created_pairs:
+        for s in steps:
+            session.add(
+                Task(
+                    user_id=user.id,
+                    title=s,
+                    due_date=task.due_date,
+                    parent_task_id=task.id,
+                )
+            )
+
     await session.commit()
-    return {"count": len(tasks), "tasks": [_out(t, []) for t in tasks]}
+    return {
+        "count": len(created_pairs),
+        "tasks": [_out(t, steps) for t, steps in created_pairs],
+    }
 
 
 @router.post("/carry-over", response_model=TaskListOut)

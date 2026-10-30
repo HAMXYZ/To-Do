@@ -289,10 +289,10 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   )
 
   const addTask = useCallback(
-    (day: number, title: string, time: string): Promise<boolean> =>
+    (day: number, title: string, time: string, starred = false): Promise<boolean> =>
       run(async () => {
         const week = live.current.weekOffset
-        await api.createTask({ week, day, title: title.trim(), time })
+        await api.createTask({ week, day, title: title.trim(), time, starred })
         await Promise.all([loadWeek(week, false), refreshOverdue()])
       }),
     [run, loadWeek, refreshOverdue],
@@ -310,6 +310,27 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
         await Promise.all([loadWeek(week, false), refreshOverdue()])
       }),
     [run, loadWeek, refreshOverdue, remember],
+  )
+
+  /** US-31: Áp dụng đánh dấu sao (⭐) hàng loạt sau khi người dùng xác nhận gợi ý ưu tiên. */
+  const applyPriorityStars = useCallback(
+    (taskIds: number[]): Promise<boolean> =>
+      run(async () => {
+        const week = live.current.weekOffset
+        try {
+          const updated = await api.confirmPrioritySuggestions(taskIds, true)
+          remember(updated.map((u) => ({ task: u.task, day: u.day })))
+        } catch (err) {
+          // Fallback nếu BE chưa bật route /ai/priority-confirm: gọi PATCH từng task
+          if (err instanceof api.ApiError && err.status === 404) {
+            await Promise.all(taskIds.map((id) => api.updateTask(id, { starred: true })))
+          } else {
+            throw err
+          }
+        }
+        await loadWeek(week, false)
+      }),
+    [run, remember, loadWeek],
   )
 
   const moveTask = useCallback(
@@ -510,6 +531,7 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
     toggleTaskStar,
     addTask,
     saveBreakdown,
+    applyPriorityStars,
     moveTask,
     carryOverdue,
     // thùng rác

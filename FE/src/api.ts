@@ -1,4 +1,12 @@
-import type { BreakdownItem, DeletedTask, Habit, OverdueTask, SearchResult, Task } from './types'
+import type {
+  BreakdownItem,
+  DeletedTask,
+  Habit,
+  OverdueTask,
+  PrioritySuggestionBundle,
+  SearchResult,
+  Task,
+} from './types'
 import {
   dateToWeekDay,
   dayToDate,
@@ -465,14 +473,150 @@ export async function carryOver(): Promise<{ count: number; tasks: SearchResult[
   return { count: r.count, tasks: r.tasks.map(toPlaced) }
 }
 
-/** Lưu danh sách AI đề xuất đã được người dùng xác nhận (week = tuần đang xem). */
+/** US-30: Lưu danh sách bước đề xuất đã được người dùng chỉnh sửa và xác nhận (week = tuần đang xem). */
 export async function saveBreakdown(week: number, items: BreakdownItem[]): Promise<SearchResult[]> {
   const iso = weekToIso(week)
   const r = await request<BeTaskList>('POST', '/tasks/bulk', {
     body: {
       iso_year: iso.year,
       iso_week: iso.week,
-      items: items.map((i) => ({ title: i.title, day: i.day, time: i.time })),
+      items: items.map((i) => ({
+        title: i.title.trim(),
+        day: i.day,
+        time: i.time ? i.time.trim() : null,
+        is_starred: Boolean(i.starred),
+        steps: i.steps ?? [],
+      })),
+    },
+  })
+  return r.tasks.map(toPlaced)
+}
+
+// ---------------------------------------------------------------------------
+// AI Breakdown & Priority Suggestions (US-29, US-30, US-31)
+// ---------------------------------------------------------------------------
+
+export interface BreakdownPreviewInput {
+  prompt: string
+  week: number
+  startDay: number
+  deadlineDay?: number
+  dueTime?: string
+}
+
+export interface BreakdownPreviewResult {
+  isPrototype: boolean
+  provider: string | null
+  notice: string
+  topic: string
+  items: BreakdownItem[]
+}
+
+interface BeBreakdownStep {
+  id: number
+  title: string
+  day: number
+  time: string
+  is_starred: boolean
+  priority_reason: string | null
+}
+
+interface BeBreakdownResponse {
+  is_prototype: boolean
+  provider: string | null
+  notice: string
+  topic: string
+  items: BeBreakdownStep[]
+}
+
+/** US-29: Gọi BE sinh kế hoạch phân rã mẫu (Prototype). */
+export async function previewBreakdown(input: BreakdownPreviewInput): Promise<BreakdownPreviewResult> {
+  const iso = weekToIso(input.week)
+  const r = await request<BeBreakdownResponse>('POST', '/ai/breakdown', {
+    body: {
+      prompt: input.prompt,
+      iso_year: iso.year,
+      iso_week: iso.week,
+      start_day: input.startDay,
+      deadline_day: input.deadlineDay,
+      due_time: input.dueTime ?? '16:00',
+    },
+  })
+  return {
+    isPrototype: r.is_prototype,
+    provider: r.provider,
+    notice: r.notice,
+    topic: r.topic,
+    items: r.items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      day: item.day,
+      time: item.time,
+      starred: item.is_starred,
+      priorityReason: item.priority_reason ?? undefined,
+    })),
+  }
+}
+
+interface BePrioritySuggestionItem {
+  task_id: number
+  title: string
+  due_date: Ymd
+  day: number
+  time: string
+  currently_starred: boolean
+  recommended_star: boolean
+  score: number
+  reason: string
+}
+
+interface BePrioritySuggestionResponse {
+  is_prototype: boolean
+  provider: string | null
+  notice: string
+  suggestions: BePrioritySuggestionItem[]
+}
+
+/** US-31: Lấy gợi ý ưu tiên (⭐) từ BE cho tuần đang xem. */
+export async function getPrioritySuggestions(
+  week: number,
+  day?: number,
+): Promise<PrioritySuggestionBundle> {
+  const iso = weekToIso(week)
+  const r = await request<BePrioritySuggestionResponse>('POST', '/ai/priority-suggestions', {
+    body: {
+      iso_year: iso.year,
+      iso_week: iso.week,
+      day,
+    },
+  })
+  return {
+    isPrototype: r.is_prototype,
+    provider: r.provider,
+    notice: r.notice,
+    suggestions: r.suggestions.map((s) => ({
+      taskId: s.task_id,
+      title: s.title,
+      dueDate: s.due_date,
+      day: s.day,
+      time: s.time,
+      currentlyStarred: s.currently_starred,
+      recommendedStar: s.recommended_star,
+      score: s.score,
+      reason: s.reason,
+    })),
+  }
+}
+
+/** US-31: Xác nhận áp dụng đánh dấu sao (⭐) cho các task được chọn. */
+export async function confirmPrioritySuggestions(
+  taskIds: number[],
+  isStarred = true,
+): Promise<SearchResult[]> {
+  const r = await request<BeTaskList>('POST', '/ai/priority-confirm', {
+    body: {
+      task_ids: taskIds,
+      is_starred: isStarred,
     },
   })
   return r.tasks.map(toPlaced)
