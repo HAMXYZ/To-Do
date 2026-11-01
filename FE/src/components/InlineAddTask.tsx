@@ -1,6 +1,8 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from './Icon'
+import type { Category, TaskPriority } from '../types'
+import type { QuickTaskDraft } from '../hooks/useAppData'
 
 export function InlineTimePicker({ value, onChange }: { value: string; onChange: (time: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -149,40 +151,102 @@ export function InlineTimePicker({ value, onChange }: { value: string; onChange:
 
 export function QuickAddTask({
   day,
+  categories,
   onCancel,
   onAdd,
 }: {
   day: string
+  categories: Category[]
   onCancel: () => void
-  onAdd: (title: string, time: string, starred?: boolean) => void
+  onAdd: (draft: QuickTaskDraft) => Promise<boolean>
 }) {
   const [title, setTitle] = useState('')
   const [time, setTime] = useState('09:00')
   const [starred, setStarred] = useState(false)
+  const [description, setDescription] = useState('')
+  const [deadlineAt, setDeadlineAt] = useState('')
+  const [estimatedMinutes, setEstimatedMinutes] = useState('')
+  const [priority, setPriority] = useState<TaskPriority>('medium')
+  const [categoryName, setCategoryName] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [validationError, setValidationError] = useState('')
+  const [clientRequestId, setClientRequestId] = useState(() => crypto.randomUUID())
+  const categoryListId = useId()
+  const hasPastDeadline = Boolean(deadlineAt && new Date(deadlineAt).getTime() < Date.now())
 
-  return <form onSubmit={event => { event.preventDefault(); if (title.trim()) onAdd(title.trim(), time, starred) }} className="mt-3 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-[#a9e9ba] bg-white p-2 shadow-sm">
+  function edit<T>(setter: (value: T) => void, value: T) {
+    setter(value)
+    setValidationError('')
+    if (!submitting) setClientRequestId(crypto.randomUUID())
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const cleanTitle = title.trim()
+    if (!cleanTitle) {
+      setValidationError('Task title is required.')
+      return
+    }
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      await onAdd({
+        title: cleanTitle,
+        time,
+        starred,
+        description: description.trim(),
+        deadlineAt,
+        estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : undefined,
+        priority,
+        categoryName: categoryName.trim(),
+        clientRequestId,
+      })
+    } catch {
+      setValidationError('Could not save the task. Your entry is still here; try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return <form onSubmit={event => { void submit(event) }} className="mt-3 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-[#a9e9ba] bg-white p-2 shadow-sm">
     <label className="mb-1.5 block px-1 text-[10px] font-bold text-[#4e8260]">NEW TASK · {day.toUpperCase()}</label>
+    <fieldset disabled={submitting} className="min-w-0 border-0 p-0">
     <div className="w-full min-w-0 rounded-xl bg-white">
-      <input autoFocus required value={title} onChange={event => setTitle(event.target.value)} placeholder="Enter task name..." aria-label={`Task name for ${day}`} className="block h-9 w-full min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[11px] text-[#243c2d] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80] focus:ring-1 focus:ring-[#4ade80]/30" />
+      <input autoFocus required maxLength={200} value={title} onChange={event => edit(setTitle, event.target.value)} placeholder="Enter task name..." aria-label={`Task name for ${day}`} className="block h-9 w-full min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[11px] text-[#243c2d] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80] focus:ring-1 focus:ring-[#4ade80]/30" />
+      <textarea value={description} maxLength={5000} onChange={event => edit(setDescription, event.target.value)} placeholder="Description (optional)" aria-label="Task description" rows={2} className="mt-1.5 block w-full resize-y rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 py-1.5 text-[11px] text-[#243c2d] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80] focus:ring-1 focus:ring-[#4ade80]/30" />
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+        <input type="datetime-local" value={deadlineAt} onChange={event => edit(setDeadlineAt, event.target.value)} aria-label="Optional deadline" className="h-8 min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-1.5 text-[10px] text-[#52665a] outline-none focus:border-[#4ade80]" />
+        <input type="number" min={1} max={1440} step={1} value={estimatedMinutes} onChange={event => edit(setEstimatedMinutes, event.target.value)} placeholder="Minutes (optional)" aria-label="Estimated minutes" className="h-8 min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[10px] text-[#52665a] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80]" />
+        <input list={categoryListId} maxLength={100} value={categoryName} onChange={event => edit(setCategoryName, event.target.value)} placeholder="Category (optional)" aria-label="Task category" className="h-8 min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[10px] text-[#52665a] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80]" />
+        <datalist id={categoryListId}>{categories.map(category => <option key={category.id} value={category.name} />)}</datalist>
+        <select value={priority} onChange={event => edit(setPriority, event.target.value as TaskPriority)} aria-label="Task priority" className="h-8 min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[10px] text-[#52665a] outline-none focus:border-[#4ade80]">
+          <option value="high">High priority</option>
+          <option value="medium">Medium priority</option>
+          <option value="low">Low priority</option>
+        </select>
+      </div>
+      {hasPastDeadline && <p role="status" className="mt-1 px-1 text-[10px] text-amber-700">This deadline is in the past. The task will be marked overdue until you reschedule it.</p>}
+      {validationError && <p role="alert" className="mt-1 px-1 text-[10px] text-[#b94743]">{validationError}</p>}
       <div className="inline-time-picker-bar mt-1.5 flex w-full min-w-0 items-center justify-between gap-1">
         <div className="flex items-center gap-1">
-          <InlineTimePicker value={time} onChange={setTime} />
+          <InlineTimePicker value={time} onChange={value => edit(setTime, value)} />
           <button
             type="button"
-            onClick={() => setStarred(current => !current)}
-            aria-label={starred ? 'Remove priority star' : 'Mark new task as priority'}
+            onClick={() => edit(setStarred, !starred)}
+            aria-label={starred ? 'Remove star from new task' : 'Star new task'}
             aria-pressed={starred}
-            title={starred ? 'Priority task (⭐)' : 'Mark as priority (⭐)'}
+            title={starred ? 'Starred task' : 'Star this task'}
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${starred ? 'bg-[#fff7e0] text-[#f59e0b]' : 'text-[#b5c2b7] hover:bg-[#fff9eb] hover:text-[#f59e0b]'}`}
           >
             <Icon name="star" size={14} className={starred ? 'fill-current' : ''} />
           </button>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <button type="button" onClick={onCancel} aria-label="Cancel new task" title="Cancel" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#829087] transition hover:bg-[#fff0ef] hover:text-[#b94743] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80]"><Icon name="close" size={15} /></button>
-          <button type="submit" aria-label="Save new task" title="Save task" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4ade80] text-white transition hover:bg-[#22c55e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#339e5e]"><Icon name="check" size={16} /></button>
+          <button type="button" onClick={onCancel} disabled={submitting} aria-label="Cancel new task" title="Cancel" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#829087] transition hover:bg-[#fff0ef] hover:text-[#b94743] disabled:cursor-wait disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80]"><Icon name="close" size={15} /></button>
+          <button type="submit" disabled={submitting} aria-label="Save new task" title="Save task" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4ade80] text-white transition hover:bg-[#22c55e] disabled:cursor-wait disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#339e5e]"><Icon name={submitting ? 'clock' : 'check'} size={16} /></button>
         </div>
       </div>
     </div>
+    </fieldset>
   </form>
 }

@@ -24,6 +24,12 @@ class HabitFrequency(str, Enum):
     CUSTOM = "custom"
 
 
+class TaskPriority(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -44,8 +50,28 @@ class User(Base):
     )
 
     tasks: Mapped[List[Task]] = relationship(back_populates="user")
+    categories: Mapped[List[Category]] = relationship(back_populates="user")
     habits: Mapped[List[Habit]] = relationship(back_populates="user")
     weekly_reviews: Mapped[List[WeeklyReview]] = relationship(back_populates="user")
+
+
+class Category(Base):
+    __tablename__ = "categories"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "normalized_name", name="uq_categories_user_normalized_name"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="categories")
+    tasks: Mapped[List[Task]] = relationship(back_populates="category")
 
 
 class Task(Base):
@@ -53,6 +79,9 @@ class Task(Base):
     __table_args__ = (
         # Mỗi habit chỉ sinh tối đa 1 task cho mỗi ngày gốc (NULL không bị tính trùng)
         UniqueConstraint("habit_id", "habit_date", name="uq_tasks_habit_id_habit_date"),
+        UniqueConstraint(
+            "user_id", "create_request_id", name="uq_tasks_user_create_request_id"
+        ),
         Index("ix_tasks_user_id_due_date", "user_id", "due_date"),
     )
 
@@ -61,8 +90,26 @@ class Task(Base):
         ForeignKey("users.id"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     due_date: Mapped[date_type] = mapped_column(Date, nullable=False)
     due_time: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
+    deadline_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    estimated_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    priority: Mapped[TaskPriority] = mapped_column(
+        SQLAlchemyEnum(
+            TaskPriority,
+            name="task_priority",
+            values_callable=lambda enum_type: [member.value for member in enum_type],
+        ),
+        default=TaskPriority.MEDIUM,
+        nullable=False,
+    )
+    category_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    create_request_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -97,6 +144,7 @@ class Task(Base):
     )
     subtasks: Mapped[List[Task]] = relationship(back_populates="parent_task")
     habit: Mapped[Optional[Habit]] = relationship(back_populates="tasks")
+    category: Mapped[Optional[Category]] = relationship(back_populates="tasks")
 
 
 class Habit(Base):
@@ -158,6 +206,11 @@ class HabitLog(Base):
 
 class WeeklyReview(Base):
     __tablename__ = "weekly_reviews"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "year", "week_number", name="uq_weekly_reviews_user_year_week"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(

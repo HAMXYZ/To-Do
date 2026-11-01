@@ -1,6 +1,6 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
-SQLAlchemy>=2.0,<3.0
+SQLAlchemy[asyncio]>=2.0,<3.0
 alembic>=1.13
 asyncpg>=0.29
 psycopg2-binary>=2.9
@@ -10,4 +10,3 @@ email-validator>=2.1
 PyJWT>=2.8
 bcrypt>=4.1
 tzdata>=2024.1
- 

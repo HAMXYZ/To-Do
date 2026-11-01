@@ -1,11 +1,13 @@
 import type {
   BreakdownItem,
+  Category,
   DeletedTask,
   Habit,
   OverdueTask,
   PrioritySuggestionBundle,
   SearchResult,
   Task,
+  TaskPriority,
 } from './types'
 import {
   dateToWeekDay,
@@ -165,11 +167,17 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
 interface BeTask {
   id: number
   title: string
+  description?: string | null
   due_date: Ymd
   day: number
   iso_year: number
   iso_week: number
   time: string
+  deadline_at?: string | null
+  estimated_minutes?: number | null
+  priority?: TaskPriority
+  category_id?: number | null
+  category_name?: string | null
   is_completed: boolean
   completed_at: string | null
   is_starred: boolean
@@ -202,7 +210,13 @@ function toTask(t: BeTask): Task {
   return {
     id: t.id,
     title: t.title,
+    description: t.description ?? undefined,
     time: t.time,
+    deadlineAt: t.deadline_at ? Date.parse(t.deadline_at) : undefined,
+    estimatedMinutes: t.estimated_minutes ?? undefined,
+    priority: t.priority ?? 'medium',
+    categoryId: t.category_id ?? undefined,
+    categoryName: t.category_name ?? undefined,
     done: t.is_completed,
     ai: t.is_ai_generated,
     steps: t.steps.length > 0 ? t.steps : undefined,
@@ -377,6 +391,114 @@ export async function getWeek(week: number, opts: { generate?: boolean } = {}): 
   }
 }
 
+export interface WeeklyReviewStats {
+  taskTotal: number
+  taskDone: number
+  taskCompletionRate: number
+  habitTotal: number
+  habitScheduledDays: number
+  habitCompletedDays: number
+  habitCompletionRate: number
+  habits: { title: string; scheduledDays: number[]; completedDays: number[]; doneCount: number; scheduledCount: number }[]
+}
+
+export interface SavedWeeklyReview {
+  id: number
+  year: number
+  weekNumber: number
+  summaryText: string
+  completionRate: number
+  createdAt: number
+}
+
+interface BeWeeklyReview {
+  id: number
+  year: number
+  week_number: number
+  summary_text: string
+  completion_rate: number
+  created_at: string
+}
+
+interface BeWeeklyReviewStats {
+  task_total: number
+  task_done: number
+  task_completion_rate: number
+  habit_total: number
+  habit_scheduled_days: number
+  habit_completed_days: number
+  habit_completion_rate: number
+  habits: { title: string; scheduled_days: number[]; completed_days: number[]; done_count: number; scheduled_count: number }[]
+}
+
+function reviewStatsToFe(stats: BeWeeklyReviewStats): WeeklyReviewStats {
+  return {
+    taskTotal: stats.task_total,
+    taskDone: stats.task_done,
+    taskCompletionRate: stats.task_completion_rate,
+    habitTotal: stats.habit_total,
+    habitScheduledDays: stats.habit_scheduled_days,
+    habitCompletedDays: stats.habit_completed_days,
+    habitCompletionRate: stats.habit_completion_rate,
+    habits: stats.habits.map(habit => ({
+      title: habit.title,
+      scheduledDays: habit.scheduled_days,
+      completedDays: habit.completed_days,
+      doneCount: habit.done_count,
+      scheduledCount: habit.scheduled_count,
+    })),
+  }
+}
+
+function weeklyReviewToFe(review: BeWeeklyReview): SavedWeeklyReview {
+  return {
+    id: review.id,
+    year: review.year,
+    weekNumber: review.week_number,
+    summaryText: review.summary_text,
+    completionRate: review.completion_rate,
+    createdAt: Date.parse(review.created_at),
+  }
+}
+
+export async function getWeeklyReview(week: number): Promise<{ review: SavedWeeklyReview | null; stats: WeeklyReviewStats }> {
+  const iso = weekToIso(week)
+  const response = await request<{ review: BeWeeklyReview | null; stats: BeWeeklyReviewStats }>(
+    'GET',
+    `/weeks/${iso.year}/${iso.week}/review`,
+  )
+  return {
+    review: response.review ? weeklyReviewToFe(response.review) : null,
+    stats: reviewStatsToFe(response.stats),
+  }
+}
+
+export async function generateWeeklyReview(week: number): Promise<{ summaryText: string; completionRate: number; provider: string; stats: WeeklyReviewStats }> {
+  const iso = weekToIso(week)
+  const response = await request<{
+    summary_text: string
+    completion_rate: number
+    provider: string
+    stats: BeWeeklyReviewStats
+  }>('POST', `/weeks/${iso.year}/${iso.week}/review/generate`)
+  return {
+    summaryText: response.summary_text,
+    completionRate: response.completion_rate,
+    provider: response.provider,
+    stats: reviewStatsToFe(response.stats),
+  }
+}
+
+export async function saveWeeklyReview(week: number, summaryText: string): Promise<SavedWeeklyReview> {
+  const iso = weekToIso(week)
+  const response = await request<BeWeeklyReview>(
+    'PUT',
+    `/weeks/${iso.year}/${iso.week}/review`,
+    { body: { summary_text: summaryText } },
+  )
+  return weeklyReviewToFe(response)
+}
+
 // ---------------------------------------------------------------------------
 // Task
 // ---------------------------------------------------------------------------
@@ -388,6 +510,13 @@ export interface CreateTaskInput {
   /** "HH:mm" hoặc "" nếu không có giờ */
   time?: string
   starred?: boolean
+  description?: string
+  /** Local datetime string from datetime-local; the backend interprets it in APP_TIMEZONE. */
+  deadlineAt?: string
+  estimatedMinutes?: number
+  priority?: TaskPriority
+  categoryId?: number
+  clientRequestId?: string
   steps?: string[]
 }
 
@@ -398,6 +527,12 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       due_date: dayToDate(input.week, input.day),
       time: input.time ?? '',
       is_starred: input.starred ?? false,
+      description: input.description ?? null,
+      deadline_at: input.deadlineAt || null,
+      estimated_minutes: input.estimatedMinutes ?? null,
+      priority: input.priority ?? 'medium',
+      category_id: input.categoryId ?? null,
+      client_request_id: input.clientRequestId ?? null,
       steps: input.steps ?? [],
     },
   })
@@ -412,6 +547,11 @@ export interface UpdateTaskInput {
   time?: string
   starred?: boolean
   done?: boolean
+  description?: string | null
+  deadlineAt?: string | null
+  estimatedMinutes?: number | null
+  priority?: TaskPriority
+  categoryId?: number | null
   steps?: string[]
 }
 
@@ -422,8 +562,26 @@ export async function updateTask(id: number, patch: UpdateTaskInput): Promise<Se
   if (patch.time !== undefined) body.time = patch.time
   if (patch.starred !== undefined) body.is_starred = patch.starred
   if (patch.done !== undefined) body.is_completed = patch.done
+  if (patch.description !== undefined) body.description = patch.description
+  if (patch.deadlineAt !== undefined) body.deadline_at = patch.deadlineAt
+  if (patch.estimatedMinutes !== undefined) body.estimated_minutes = patch.estimatedMinutes
+  if (patch.priority !== undefined) body.priority = patch.priority
+  if (patch.categoryId !== undefined) body.category_id = patch.categoryId
   if (patch.steps !== undefined) body.steps = patch.steps
   return toPlaced(await request<BeTask>('PATCH', `/tasks/${id}`, { body }))
+}
+
+interface BeCategory {
+  id: number
+  name: string
+}
+
+export async function listCategories(): Promise<Category[]> {
+  return request<BeCategory[]>('GET', '/categories')
+}
+
+export async function createCategory(name: string): Promise<Category> {
+  return request<BeCategory>('POST', '/categories', { body: { name } })
 }
 
 /** Chuyển task vào thùng rác (subtask đi theo). */
@@ -463,7 +621,12 @@ export async function getOverdue(): Promise<OverdueTask[]> {
   const r = await request<BeTaskList>('GET', '/tasks/overdue')
   return r.tasks.map((t) => {
     const p = toPlaced(t)
-    return { task: p.task, week: p.week, day: p.day, due: ymdToLocalDate(t.due_date) }
+    return {
+      task: p.task,
+      week: p.week,
+      day: p.day,
+      due: t.deadline_at ? new Date(t.deadline_at) : ymdToLocalDate(t.due_date),
+    }
   })
 }
 
@@ -644,6 +807,23 @@ export async function createHabit(h: HabitInput): Promise<Habit> {
         is_active: h.active,
       },
     }),
+  )
+}
+
+export interface HabitRecognitionSuggestion {
+  title: string
+  frequency: 'daily' | 'weekdays' | 'custom'
+  days: number[]
+  time: string | null
+  reason: string
+  confidence: number
+}
+
+export async function recognizeHabits(text: string): Promise<{ suggestions: HabitRecognitionSuggestion[]; notice: string; provider: string }> {
+  return request<{ suggestions: HabitRecognitionSuggestion[]; notice: string; provider: string }>(
+    'POST',
+    '/ai/habits/recognize',
+    { body: { text } },
   )
 }
 

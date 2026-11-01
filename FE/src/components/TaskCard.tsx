@@ -2,8 +2,9 @@ import React, { useState } from 'react'
 import Icon from './Icon'
 import type { Task } from '../types'
 
-export function PlannerTaskCard({ task, compact, editMode, expanded, onToggle, onToggleStar, onDelete, onSaveTitle, onToggleSteps, focusMode }: {
+export function PlannerTaskCard({ task, pending = false, compact, editMode, expanded, onToggle, onToggleStar, onDelete, onSaveTitle, onToggleSteps, focusMode }: {
   task: Task
+  pending?: boolean
   compact: boolean
   editMode: boolean
   expanded: boolean
@@ -28,8 +29,8 @@ export function PlannerTaskCard({ task, compact, editMode, expanded, onToggle, o
     <div className="flex min-w-0 items-start justify-between gap-2">
       <div className="flex min-w-0 flex-1 items-start gap-2">
       <label className="mt-0.5 shrink-0">
-        <input type="checkbox" checked={task.done} onChange={onToggle} aria-label={`Mark ${task.title} ${task.done ? 'incomplete' : 'complete'}`} className="sr-only peer" />
-        <span className="flex h-[17px] w-[17px] cursor-pointer items-center justify-center rounded-[5px] border border-[#cbdccd] text-white transition peer-checked:border-[#4ade80] peer-checked:bg-[#4ade80] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#339e5e] hover:border-[#4ade80]">{task.done && <Icon name="check" size={11} />}</span>
+        <input type="checkbox" checked={task.done} disabled={pending} aria-busy={pending} onChange={onToggle} aria-label={`Mark ${task.title} ${task.done ? 'incomplete' : 'complete'}`} className="sr-only peer" />
+        <span className="flex h-[17px] w-[17px] cursor-pointer items-center justify-center rounded-[5px] border border-[#cbdccd] text-white transition peer-checked:border-[#4ade80] peer-checked:bg-[#4ade80] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#339e5e] peer-disabled:cursor-wait peer-disabled:opacity-60 hover:border-[#4ade80]">{task.done && <Icon name="check" size={11} />}</span>
       </label>
       <div className="min-w-0 flex-1 overflow-hidden">
         {editingTitle ? <input autoFocus value={draftTitle} onChange={event => setDraftTitle(event.target.value)} onBlur={saveTitle} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); saveTitle() } if (event.key === 'Escape') { setDraftTitle(task.title); setEditingTitle(false) } }} aria-label={`Edit title for ${task.title}`} className="w-full rounded-md border border-[#a9e9ba] bg-[#f8fdf8] px-1.5 py-1 text-[11px] font-semibold leading-[1.45] text-[#344639] outline-none focus:ring-2 focus:ring-[#4ade80]/20" />
@@ -37,11 +38,16 @@ export function PlannerTaskCard({ task, compact, editMode, expanded, onToggle, o
           : <p className={`text-[11px] leading-[1.45] ${task.done ? 'font-normal text-slate-400 line-through' : 'font-semibold text-[#344639]'}`}>{task.title}</p>}
       </div>
       </div>
-      <button type="button" onClick={onToggleStar} aria-label={`${task.starred ? 'Remove priority from' : 'Mark as priority'} ${task.title}`} aria-pressed={Boolean(task.starred)} title={task.starred ? 'Remove priority' : 'Mark as priority'} className={`shrink-0 rounded-lg p-1.5 transition ${task.starred ? 'text-[#f59e0b]' : 'text-[#c8d1c9] hover:text-[#f59e0b]'}`}><Icon name="star" size={15} className={task.starred ? 'fill-current' : ''} /></button>
+      <button type="button" onClick={onToggleStar} aria-label={`${task.starred ? 'Remove star from' : 'Star'} ${task.title}`} aria-pressed={Boolean(task.starred)} title={task.starred ? 'Remove star' : 'Star task'} className={`shrink-0 rounded-lg p-1.5 transition ${task.starred ? 'text-[#f59e0b]' : 'text-[#c8d1c9] hover:text-[#f59e0b]'}`}><Icon name="star" size={15} className={task.starred ? 'fill-current' : ''} /></button>
       {editMode && <button type="button" onClick={onDelete} aria-label={`Delete ${task.title}`} title={`Delete ${task.title}`} className="shrink-0 rounded-lg p-1.5 text-[#dc7770] transition hover:bg-[#fee2e2] hover:text-[#b94743] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#dc7770]"><Icon name="trash" size={15} /></button>}
     </div>
+    {task.description && !compact && <p className="w-full break-words border-t border-[#edf1ed] pt-2 text-[10px] leading-relaxed text-[#738677]">{task.description}</p>}
     {!compact && <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 pt-1 text-xs text-slate-500">
       <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-[#f6f8f5] px-2 text-[10px] font-medium text-[#738677]"><Icon name="clock" size={11} />{task.time}</span>
+      {task.categoryName && <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-indigo-50 px-2 text-[10px] font-medium text-indigo-700">{task.categoryName}</span>}
+      {task.priority && <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-[#f6f8f5] px-2 text-[10px] font-medium capitalize text-[#738677]">{task.priority}</span>}
+      {task.deadlineAt && <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-amber-50 px-2 text-[10px] font-medium text-amber-800">Deadline {new Date(task.deadlineAt).toLocaleString()}</span>}
+      {task.estimatedMinutes && <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-[#f6f8f5] px-2 text-[10px] font-medium text-[#738677]">{task.estimatedMinutes} min</span>}
       {task.steps?.length ? <span className="inline-flex h-6 max-w-full shrink items-center justify-center gap-1 overflow-hidden rounded-md bg-emerald-50 px-2 text-[10px] font-medium text-emerald-700"><Icon name="list" size={11} className="shrink-0" /><span className="truncate">{task.steps.length} subtasks</span></span> : null}
       {task.ai && <button type="button" onClick={onToggleSteps} title="View AI-suggested steps" aria-label={`View suggested steps for ${task.title}`} className="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded-md bg-emerald-50 px-2 text-[10px] font-medium text-emerald-700 hover:bg-[#ddf4e3]"><Icon name="sparkle" size={11} /> AI</button>}
     </div>}
@@ -49,7 +55,7 @@ export function PlannerTaskCard({ task, compact, editMode, expanded, onToggle, o
   </div>
 }
 
-export function MobileTaskCard({ task, onToggle, onToggleStar, onDelete, onReschedule, focusMode }: { task: Task; onToggle: () => void; onToggleStar: () => void; onDelete: () => void; onReschedule: () => void; focusMode: boolean }) {
+export function MobileTaskCard({ task, pending = false, onToggle, onToggleStar, onDelete, onReschedule, focusMode }: { task: Task; pending?: boolean; onToggle: () => void; onToggleStar: () => void; onDelete: () => void; onReschedule: () => void; focusMode: boolean }) {
   const [touchStart, setTouchStart] = useState<number | null>(null)
   const [offset, setOffset] = useState(0)
 
@@ -77,10 +83,19 @@ export function MobileTaskCard({ task, onToggle, onToggleStar, onDelete, onResch
     </div>
     <article onTouchStart={event => setTouchStart(event.touches[0].clientX)} onTouchMove={event => { if (touchStart !== null) setOffset(Math.max(-126, Math.min(96, event.touches[0].clientX - touchStart))) }} onTouchEnd={finishSwipe} style={{ transform: `translateX(${offset}px)` }} className={`relative z-10 rounded-2xl border px-4 py-4 shadow-[0_6px_18px_rgba(31,65,39,0.045)] transition-transform ${task.done ? 'border-emerald-100 bg-emerald-50/60' : 'border-[#eaf0e8] bg-white'} ${focusMode && !task.starred ? 'pointer-events-none opacity-30' : ''}`}>
       <div className="flex items-center gap-3">
-        <label className="shrink-0"><input type="checkbox" checked={task.done} onChange={onToggle} aria-label={`Mark ${task.title} ${task.done ? 'incomplete' : 'complete'}`} className="peer sr-only" /><span className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-[8px] border-[1.5px] border-[#cbdccf] text-white transition peer-checked:border-[#4ade80] peer-checked:bg-[#4ade80] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#339e5e]"><Icon name="check" size={15} className={task.done ? '' : 'opacity-0'} /></span></label>
+        <label className="shrink-0"><input type="checkbox" checked={task.done} disabled={pending} aria-busy={pending} onChange={onToggle} aria-label={`Mark ${task.title} ${task.done ? 'incomplete' : 'complete'}`} className="peer sr-only" /><span className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-[8px] border-[1.5px] border-[#cbdccf] text-white transition peer-checked:border-[#4ade80] peer-checked:bg-[#4ade80] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#339e5e] peer-disabled:cursor-wait peer-disabled:opacity-60"><Icon name="check" size={15} className={task.done ? '' : 'opacity-0'} /></span></label>
         <div className="z-10 min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2"><h3 className={`min-w-0 text-[14px] leading-snug ${task.done ? 'font-normal text-slate-400 line-through' : 'font-semibold text-[#253d2e]'}`}>{task.title}</h3><button type="button" onClick={onToggleStar} aria-label={`${task.starred ? 'Remove priority from' : 'Mark as priority'} ${task.title}`} aria-pressed={Boolean(task.starred)} className={`shrink-0 ${task.starred ? 'text-[#f59e0b]' : 'text-[#c8d1c9]'}`}><Icon name="star" size={16} className={task.starred ? 'fill-current' : ''} /></button></div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500"><span className="inline-flex h-6 items-center justify-center gap-1 rounded-md bg-emerald-50 px-2 text-[10px] font-medium text-emerald-700"><Icon name="list" size={12} />{task.steps?.length ?? 0} subtasks</span><span className="inline-flex h-6 items-center justify-center gap-1 rounded-md bg-[#f8f7f0] px-2 text-[10px] font-medium text-[#9b9277]"><Icon name="clock" size={12} />{task.time}</span>{task.ai && <span className="inline-flex h-6 items-center justify-center gap-1 rounded-md bg-emerald-50 px-2 text-[10px] font-medium text-emerald-700"><Icon name="sparkle" size={12} />AI</span>}</div>
+          <div className="flex items-start justify-between gap-2"><h3 className={`min-w-0 text-[14px] leading-snug ${task.done ? 'font-normal text-slate-400 line-through' : 'font-semibold text-[#253d2e]'}`}>{task.title}</h3><button type="button" onClick={onToggleStar} aria-label={`${task.starred ? 'Remove star from' : 'Star'} ${task.title}`} aria-pressed={Boolean(task.starred)} title={task.starred ? 'Remove star' : 'Star task'} className={`shrink-0 ${task.starred ? 'text-[#f59e0b]' : 'text-[#c8d1c9]'}`}><Icon name="star" size={16} className={task.starred ? 'fill-current' : ''} /></button></div>
+          {task.description && <p className="mt-1 break-words text-[10px] leading-relaxed text-[#738677]">{task.description}</p>}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span className="inline-flex h-6 items-center justify-center gap-1 rounded-md bg-emerald-50 px-2 text-[10px] font-medium text-emerald-700"><Icon name="list" size={12} />{task.steps?.length ?? 0} subtasks</span>
+            <span className="inline-flex h-6 items-center justify-center gap-1 rounded-md bg-[#f8f7f0] px-2 text-[10px] font-medium text-[#9b9277]"><Icon name="clock" size={12} />{task.time}</span>
+            {task.categoryName && <span className="inline-flex h-6 items-center rounded-md bg-indigo-50 px-2 text-[10px] font-medium text-indigo-700">{task.categoryName}</span>}
+            {task.priority && <span className="inline-flex h-6 items-center rounded-md bg-[#f6f8f5] px-2 text-[10px] font-medium capitalize text-[#738677]">{task.priority}</span>}
+            {task.deadlineAt && <span className="inline-flex h-6 items-center rounded-md bg-amber-50 px-2 text-[10px] font-medium text-amber-800">Deadline {new Date(task.deadlineAt).toLocaleString()}</span>}
+            {task.estimatedMinutes && <span className="inline-flex h-6 items-center rounded-md bg-[#f6f8f5] px-2 text-[10px] font-medium text-[#738677]">{task.estimatedMinutes} min</span>}
+            {task.ai && <span className="inline-flex h-6 items-center justify-center gap-1 rounded-md bg-emerald-50 px-2 text-[10px] font-medium text-emerald-700"><Icon name="sparkle" size={12} />AI</span>}
+          </div>
         </div>
       </div>
     </article>

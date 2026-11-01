@@ -4,14 +4,16 @@ import { createPortal } from 'react-dom'
 
 import Icon, { type IconName } from './components/Icon'
 import { QuickAddTask } from './components/InlineAddTask'
-import { AIBreakdownModal } from './components/AIBreakdownModal'
-import { AIPriorityModal } from './components/AIPriorityModal'
+import AIBreakdownModal from './components/AIBreakdownModal'
+import AIPriorityModal from './components/AIPriorityModal'
+import AIHabitRecognitionModal from './components/AIHabitRecognitionModal'
+import WeeklyReviewModal from './components/WeeklyReviewModal'
 import { PlannerTaskCard, MobileTaskCard as MobileTaskCardExternal } from './components/TaskCard'
 import { SearchDropdown } from './components/SearchDropdown'
 import { TrashBinModal as TrashBinModalExternal } from './components/TrashBinModal'
 import type { Task, BreakdownItem, Habit, OverdueTask, SearchResult } from './types'
 import * as api from './api'
-import { useAppData, type SignedOutReason } from './hooks/useAppData'
+import { useAppData, type QuickTaskDraft, type SignedOutReason } from './hooks/useAppData'
 import { sortTasksByPriorityAndTime } from './utils/aiBreakdown'
 import { localYmd, ymdToLocalDate } from './utils/dates'
 import { getWeekLabelForOffset, WEEK_ANCHOR_MONDAY } from './utils/week'
@@ -474,7 +476,7 @@ function HabitFields({ value, onChange }: { value: Omit<Habit, 'id'>; onChange: 
   </div>
 }
 
-function HabitManagementModal({ habits, onAdd, onUpdate, onRemove, onReorder, onClose }: { habits: Habit[]; onAdd: (habit: Omit<Habit, 'id'>) => void; onUpdate: (habit: Habit) => void; onRemove: (id: number) => void; onReorder: (from: number, to: number) => void; onClose: () => void }) {
+function HabitManagementModal({ habits, onAdd, onUpdate, onRemove, onReorder, onRecognize, onClose }: { habits: Habit[]; onAdd: (habit: Omit<Habit, 'id'>) => void; onUpdate: (habit: Habit) => void; onRemove: (id: number) => void; onReorder: (from: number, to: number) => void; onRecognize: () => void; onClose: () => void }) {
   const [draft, setDraft] = useState(emptyHabit)
   const [editing, setEditing] = useState<Habit | null>(null)
   const [error, setError] = useState('')
@@ -492,7 +494,7 @@ function HabitManagementModal({ habits, onAdd, onUpdate, onRemove, onReorder, on
   }
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#10231a]/60 p-3 backdrop-blur-[8px] sm:p-5" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><div role="dialog" aria-modal="true" aria-labelledby="manage-habits-title" className="flex max-h-[calc(100dvh-24px)] w-full max-w-[640px] flex-col overflow-hidden rounded-[22px] border border-white/80 bg-white shadow-[0_30px_90px_rgba(9,37,21,0.3)]">
-    <div className="flex shrink-0 items-start justify-between border-b border-[#e9f0ea] px-5 py-5 sm:px-7"><div><div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#5db779]">BUILD YOUR ROUTINE</div><h2 id="manage-habits-title" className="text-[21px] font-bold tracking-[-0.04em] text-[#1e3828]">Habit Settings & Management</h2><p className="mt-1 text-[12px] text-[#8a9d8f]">Create, edit, or toggle habit routines.</p></div><button type="button" onClick={onClose} aria-label="Close habit management" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#e5ece6] text-[#829585] hover:bg-[#f2f9f3]"><Icon name="close" size={17} /></button></div>
+    <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#e9f0ea] px-5 py-5 sm:px-7"><div><div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#5db779]">BUILD YOUR ROUTINE</div><h2 id="manage-habits-title" className="text-[21px] font-bold tracking-[-0.04em] text-[#1e3828]">Habit Settings & Management</h2><p className="mt-1 text-[12px] text-[#8a9d8f]">Create, edit, or toggle habit routines.</p><button type="button" onClick={onRecognize} className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100">Recognize from a description with AI</button></div><button type="button" onClick={onClose} aria-label="Close habit management" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#e5ece6] text-[#829585] hover:bg-[#f2f9f3]"><Icon name="close" size={17} /></button></div>
     <div className="overflow-y-auto px-5 py-5 sm:px-7"><form onSubmit={event => { event.preventDefault(); if (valid(draft)) { onAdd({ ...draft, title: draft.title.trim() }); setDraft(emptyHabit()) } }} className="rounded-2xl border border-[#dcefe1] bg-[#f6fcf7] p-4 sm:p-5"><div className="mb-4 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#dcfce7] text-[#329a55]"><Icon name="plus" size={16} /></span><h3 className="text-[13px] font-bold text-[#2c4935]">Create a new habit</h3></div><HabitFields value={draft} onChange={setDraft} />{error && <p role="alert" className="mt-2 text-[11px] text-[#c95754]">{error}</p>}<button type="submit" className="mt-4 flex items-center gap-1.5 rounded-[10px] bg-[#4ade80] px-4 py-2.5 text-[11px] font-bold text-[#174b2b] hover:bg-[#36d871]"><Icon name="plus" size={15} /> Add to Tracker</button></form>
       <div className="mb-3 mt-6 flex items-center justify-between"><h3 className="text-[13px] font-bold text-[#2c4935]">Your habits</h3><span className="rounded-full bg-[#edf8ef] px-2.5 py-1 text-[10px] font-bold text-[#519b63]">{habits.length} ROUTINES</span></div><div className="space-y-2">{habits.map((habit, index) => <div key={habit.id} draggable onDragStart={event => event.dataTransfer.setData('application/x-focusflow-habit', String(index))} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const from = Number(event.dataTransfer.getData('application/x-focusflow-habit')); if (Number.isInteger(from) && from >= 0 && from < habits.length) onReorder(from, index) }} className="rounded-xl border border-[#e6eee7] bg-white p-3.5"><div className="flex items-center gap-2"><span title="Drag to reorder" className="cursor-grab text-[#a6b7aa]"><Icon name="grip" size={17} /></span><div className="min-w-0 flex-1"><p className={`truncate text-[12px] font-semibold ${habit.active ? 'text-[#2c4434]' : 'text-[#9ba89e]'}`}>{habit.title}</p><p className="mt-0.5 text-[10px] text-[#92a394]">{habit.frequency === 'everyday' ? 'Everyday' : habit.frequency === 'weekdays' ? 'Weekdays' : habit.days.map(day => shortDays[day]).join(', ')} · {habit.time}{habit.autoTask ? ' · Daily task on' : ''}</p></div><button type="button" onClick={() => onUpdate({ ...habit, active: !habit.active })} role="switch" aria-checked={habit.active} aria-label={`${habit.active ? 'Pause' : 'Activate'} ${habit.title}`} className={`relative h-5 w-9 shrink-0 rounded-full transition ${habit.active ? 'bg-[#4ade80]' : 'bg-[#dbe4dd]'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all ${habit.active ? 'left-[18px]' : 'left-0.5'}`} /></button><button type="button" onClick={() => { setEditing(habit); setError('') }} aria-label={`Edit ${habit.title}`} className="rounded-lg p-1.5 text-[#7fa489] hover:bg-[#edf9ef]"><Icon name="edit" size={15} /></button><button type="button" onClick={() => { onRemove(habit.id); if (editing?.id === habit.id) setEditing(null) }} aria-label={`Delete ${habit.title}`} className="rounded-lg p-1.5 text-[#dc7770] hover:bg-[#fff0ef]"><Icon name="trash" size={15} /></button></div>{editing?.id === habit.id && <form onSubmit={event => { event.preventDefault(); if (valid(editing)) { onUpdate({ ...editing, title: editing.title.trim() }); setEditing(null) } }} className="mt-3 border-t border-[#e9f0ea] pt-3"><HabitFields value={editing} onChange={value => setEditing({ ...editing, ...value })} />{error && <p role="alert" className="mt-2 text-[11px] text-[#c95754]">{error}</p>}<div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="px-2 py-2 text-[11px] font-semibold text-[#829585]">Cancel</button><button type="submit" className="rounded-lg bg-[#4ade80] px-3 py-2 text-[11px] font-bold text-[#174b2b]">Save changes</button></div></form>}</div>)}{!habits.length && <p className="rounded-xl border border-dashed border-[#dcebdd] p-5 text-center text-[12px] text-[#859a8a]">No habits yet. Add one above to begin.</p>}</div>
     </div>
@@ -505,6 +507,8 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
   const { weekOffset, setWeekOffset, tasksByWeek, getTaskDay, habitDefinitions, overdue, undoItem, deletedTasks } = data
   const { toggleTask, updateTaskTitle, toggleTaskStar, toggleHabit, addHabit, updateHabit, removeHabit, reorderHabit, moveTask, carryOverdue, dismissTask, restoreTask, undoDelete, permanentlyDeleteTask } = data
   const [habitModalOpen, setHabitModalOpen] = useState(false)
+  const [habitRecognitionOpen, setHabitRecognitionOpen] = useState(false)
+  const [weeklyReviewOpen, setWeeklyReviewOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [priorityModalOpen, setPriorityModalOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -548,8 +552,11 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
   const completedCurrentMatches = matchingTasks.filter(result => result.week === weekOffset && result.task.done).sort((a, b) => (b.task.completedAt ?? 0) - (a.task.completedAt ?? 0))
   const completedOtherMatches = matchingTasks.filter(result => result.week !== weekOffset && result.task.done).sort((a, b) => (b.task.completedAt ?? 0) - (a.task.completedAt ?? 0))
 
-  function addQuickTask(day: number, title: string, time: string, starred = false) {
-    void data.addTask(day, title, time, starred).then(ok => { if (ok) setQuickAddDay(null) })
+  function addQuickTask(day: number, draft: QuickTaskDraft): Promise<boolean> {
+    return data.addTask(day, draft).then(ok => {
+      if (ok) setQuickAddDay(null)
+      return ok
+    })
   }
 
   async function saveBreakdown(items: BreakdownItem[]): Promise<boolean> {
@@ -606,11 +613,11 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
 
         <main className="px-5 pb-20 pt-6">
           <MobilePendingBanner items={overdue.slice(0, 3)} onCarry={carryOverdue} />
-          <div className="mb-5 flex items-end justify-between"><div><p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#66ad78]">ONE STEP AT A TIME</p><h2 className="text-[23px] font-bold tracking-[-0.05em] text-[#193729]">Today’s tasks<span className="text-[#4ade80]">.</span></h2></div><span className="mb-0.5 rounded-full bg-[#e8f7e9] px-3 py-1.5 text-[11px] font-bold text-[#408b56]">{selectedDone} of {selectedTasks.length} done</span></div>
+          <div className="mb-5 flex items-end justify-between gap-2"><div><p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#66ad78]">ONE STEP AT A TIME</p><h2 className="text-[23px] font-bold tracking-[-0.05em] text-[#193729]">Today’s tasks<span className="text-[#4ade80]">.</span></h2></div><div className="flex items-center gap-2"><button type="button" onClick={() => setWeeklyReviewOpen(true)} className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-[10px] font-bold text-emerald-800">Weekly review</button><span className="mb-0.5 rounded-full bg-[#e8f7e9] px-3 py-1.5 text-[11px] font-bold text-[#408b56]">{selectedDone} of {selectedTasks.length} done</span></div></div>
           <div className="space-y-3">
             {selectedTasks.length === 0 && <div className="rounded-2xl border border-[#eaf0e8] bg-white px-5 py-10 text-center"><div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#eaf9ed] text-[#55b472]"><Icon name="list" size={22} /></div><p className="text-[14px] font-semibold text-[#355440]">A little breathing room.</p><p className="mt-1 text-[12px] text-[#8a9b8d]">Tap the button below to add your first task.</p></div>}
-            {selectedTasks.map(task => <MobileTaskCardExternal key={task.id} task={task} focusMode={focusMode} onToggle={() => toggleTask(task.id)} onToggleStar={() => toggleTaskStar(task.id)} onDelete={() => dismissTask(weekOffset, task.id)} onReschedule={() => moveTask(weekOffset, task.id, selectedDay === 6 ? weekOffset + 1 : weekOffset, selectedDay === 6 ? 0 : selectedDay + 1)} />)}
-            {quickAddDay === selectedDay ? <QuickAddTask key={`mobile-${weekOffset}-${selectedDay}`} day={dayNames[selectedDay]} onCancel={() => setQuickAddDay(null)} onAdd={(title, time, starred) => addQuickTask(selectedDay, title, time, starred)} /> : <button type="button" onClick={() => setQuickAddDay(selectedDay)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#bcdcc4] bg-[#f5fbf6] py-3.5 text-[12px] font-bold text-[#459661]"><Icon name="plus" size={16} /> Add task for today</button>}
+            {selectedTasks.map(task => <MobileTaskCardExternal key={task.id} task={task} pending={data.pendingTaskIds.has(task.id)} focusMode={focusMode} onToggle={() => toggleTask(task.id)} onToggleStar={() => toggleTaskStar(task.id)} onDelete={() => dismissTask(weekOffset, task.id)} onReschedule={() => moveTask(weekOffset, task.id, selectedDay === 6 ? weekOffset + 1 : weekOffset, selectedDay === 6 ? 0 : selectedDay + 1)} />)}
+            {quickAddDay === selectedDay ? <QuickAddTask key={`mobile-${weekOffset}-${selectedDay}`} day={dayNames[selectedDay]} categories={data.categories} onCancel={() => setQuickAddDay(null)} onAdd={draft => addQuickTask(selectedDay, draft)} /> : <button type="button" onClick={() => setQuickAddDay(selectedDay)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#bcdcc4] bg-[#f5fbf6] py-3.5 text-[12px] font-bold text-[#459661]"><Icon name="plus" size={16} /> Add task for today</button>}
           </div>
           {selectedTasks.length > 0 && <p className="mt-5 text-center text-[10px] font-medium text-[#9aad9c]">Swipe right to complete · Swipe left for actions</p>}
 
@@ -683,7 +690,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
       </div>
 
       <div className="mt-9"><PendingTasks items={overdue} onCarry={carryOverdue} onMove={(week, id, date) => moveTask(week, id, weekOffsetForDate(date), (date.getDay() + 6) % 7)} onDismiss={dismissTask} /></div>
-      <div className="mb-5 mt-8 flex items-end justify-between gap-4"><div><div className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#5bac76]">DAY BY DAY</div><h2 className="text-[22px] font-bold tracking-[-0.045em]">Your weekly plan</h2></div><span className="rounded-full border border-[#e5eee7] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#6e8875]">{tasks.length} tasks this week</span></div>
+      <div className="mb-5 mt-8 flex items-end justify-between gap-4"><div><div className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#5bac76]">DAY BY DAY</div><h2 className="text-[22px] font-bold tracking-[-0.045em]">Your weekly plan</h2></div><div className="flex items-center gap-2"><span className="rounded-full border border-[#e5eee7] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#6e8875]">{tasks.length} tasks this week</span><button type="button" onClick={() => setWeeklyReviewOpen(true)} className="rounded-full bg-emerald-500 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-600">Weekly review</button></div></div>
 
       <div className="overflow-x-auto pb-5">
         <div className="grid min-w-[1190px] grid-cols-7 gap-3.5 lg:gap-4">
@@ -739,6 +746,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
                 {dayTasks.map(task => <PlannerTaskCard
                   key={task.id}
                   task={task}
+                  pending={data.pendingTaskIds.has(task.id)}
                   compact={compactCards}
                   editMode={editMode}
                   expanded={expandedTask === task.id}
@@ -752,7 +760,7 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
               </div>
               <div className="mt-auto pt-3">
                 {quickAddDay === index
-                  ? <QuickAddTask key={`${weekOffset}-${index}`} day={day} onCancel={() => setQuickAddDay(null)} onAdd={(title, time, starred) => addQuickTask(index, title, time, starred)} />
+                  ? <QuickAddTask key={`${weekOffset}-${index}`} day={day} categories={data.categories} onCancel={() => setQuickAddDay(null)} onAdd={draft => addQuickTask(index, draft)} />
                   : <button type="button" onClick={() => setQuickAddDay(index)} className="flex w-full items-center justify-center gap-1 rounded-[9px] border border-dashed border-[#d7e8da] py-2 text-[10px] font-semibold text-[#7baa85] transition hover:border-[#4ade80] hover:bg-[#f4fbf5] hover:text-[#318d52]"><Icon name="plus" size={13} /> Add task</button>}
               </div>
             </section>
@@ -788,7 +796,9 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
     <AnimatePresence>
       {data.error && <motion.div role="alert" className="fixed bottom-20 left-1/2 z-[95] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-4 rounded-xl bg-[#7a2b26] px-4 py-3 text-white shadow-xl" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} transition={{ duration: 0.18 }}><span className="text-[12px] font-medium">{data.error}</span><button type="button" onClick={data.clearError} className="text-[11px] font-bold text-[#ffd1cc] hover:text-white">Dismiss</button></motion.div>}
     </AnimatePresence>
-    {habitModalOpen && <HabitManagementModal habits={habitDefinitions} onAdd={addHabit} onUpdate={updateHabit} onRemove={removeHabit} onReorder={reorderHabit} onClose={() => setHabitModalOpen(false)} />}
+    {habitModalOpen && <HabitManagementModal habits={habitDefinitions} onAdd={addHabit} onUpdate={updateHabit} onRemove={removeHabit} onReorder={reorderHabit} onRecognize={() => { setHabitModalOpen(false); setHabitRecognitionOpen(true) }} onClose={() => setHabitModalOpen(false)} />}
+    {habitRecognitionOpen && <AIHabitRecognitionModal onClose={() => setHabitRecognitionOpen(false)} onCreate={addHabit} />}
+    {weeklyReviewOpen && <WeeklyReviewModal week={weekOffset} onClose={() => setWeeklyReviewOpen(false)} />}
     {reviewOpen && <HabitReviewModal selectedMonday={monday} weekOffset={weekOffset} onClose={() => setReviewOpen(false)} />}
   </div>
 }

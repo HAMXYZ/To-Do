@@ -1,10 +1,12 @@
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from src import limits
+from src import config, limits
+from src.models import TaskPriority
 
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -48,12 +50,21 @@ class TaskCreate(BaseModel):
     due_date: date
     time: Optional[str] = None
     is_starred: bool = False
-    steps: list[str] = []
+    description: Optional[str] = Field(default=None, max_length=5000)
+    deadline_at: Optional[datetime] = None
+    estimated_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    priority: TaskPriority = TaskPriority.MEDIUM
+    category_id: Optional[int] = Field(default=None, ge=1)
+    client_request_id: Optional[UUID] = None
+    steps: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _clean(self):
         self.title = clean_title(self.title)
         self.time = clean_time(self.time)
+        if self.description is not None:
+            self.description = self.description.strip() or None
+        self.deadline_at = clean_deadline(self.deadline_at)
         self.steps = clean_steps(self.steps)
         return self
 
@@ -64,17 +75,26 @@ class TaskPatch(BaseModel):
     time: Optional[str] = None  # "" hoặc null = xóa giờ
     is_starred: Optional[bool] = None
     is_completed: Optional[bool] = None
+    description: Optional[str] = Field(default=None, max_length=5000)
+    deadline_at: Optional[datetime] = None
+    estimated_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    priority: Optional[TaskPriority] = None
+    category_id: Optional[int] = Field(default=None, ge=1)
     steps: Optional[list[str]] = None
 
     @model_validator(mode="after")
     def _clean(self):
-        for f in ("title", "due_date", "is_starred", "is_completed", "steps"):
+        for f in ("title", "due_date", "is_starred", "is_completed", "priority", "steps"):
             if f in self.model_fields_set and getattr(self, f) is None:
                 raise ValueError(f"{f} không được là null")
         if self.title is not None:
             self.title = clean_title(self.title)
         if self.time is not None:
             self.time = clean_time(self.time)
+        if "description" in self.model_fields_set and self.description is not None:
+            self.description = self.description.strip() or None
+        if "deadline_at" in self.model_fields_set and self.deadline_at is not None:
+            self.deadline_at = clean_deadline(self.deadline_at)
         if self.steps is not None:
             self.steps = clean_steps(self.steps)
         return self
@@ -104,11 +124,17 @@ class BulkIn(BaseModel):
 class TaskOut(BaseModel):
     id: int
     title: str
+    description: Optional[str] = None
     due_date: date
     day: int  # 0 = thứ Hai ... 6 = Chủ nhật
     iso_year: int
     iso_week: int
     time: str  # "HH:mm" hoặc ""
+    deadline_at: Optional[datetime] = None
+    estimated_minutes: Optional[int] = None
+    priority: TaskPriority
+    category_id: Optional[int] = None
+    category_name: Optional[str] = None
     is_completed: bool
     completed_at: Optional[datetime] = None
     is_starred: bool
@@ -128,3 +154,11 @@ class TaskListOut(BaseModel):
 
 class CountOut(BaseModel):
     count: int
+
+
+def clean_deadline(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=config.APP_TZ)
+    return value.astimezone(timezone.utc)
