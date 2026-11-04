@@ -4,13 +4,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import Integer, String, cast, delete, extract, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src import config
 from src.db import get_session
 from src.deps import get_current_user
 from src.habit_logs import upsert_log
-from src.models import Habit, Task, User, utc_now
+from src.models import Category, Habit, Task, User, utc_now
 from src.task_schemas import (
     BulkIn,
     CountOut,
@@ -23,9 +24,6 @@ from src.task_schemas import (
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
-PAST_LOCK_MSG = "Không thể thay đổi trạng thái hoàn thành của ngày đã qua"
-
-
 # ---------- helpers ----------
 
 def _parse_time(v: Optional[str]) -> Optional[time_type]:
@@ -35,16 +33,22 @@ def _parse_time(v: Optional[str]) -> Optional[time_type]:
     return time_type(int(h), int(m))
 
 
-def _out(t: Task, steps: list[str]) -> dict:
+def _out(t: Task, steps: list[str], category_name: Optional[str] = None) -> dict:
     iso = t.due_date.isocalendar()
     return {
         "id": t.id,
         "title": t.title,
+        "description": t.description,
         "due_date": t.due_date,
         "day": t.due_date.weekday(),
         "iso_year": iso.year,
         "iso_week": iso.week,
         "time": t.due_time.strftime("%H:%M") if t.due_time else "",
+        "deadline_at": t.deadline_at,
+        "estimated_minutes": t.estimated_minutes,
+        "priority": t.priority,
+        "category_id": t.category_id,
+        "category_name": category_name,
         "is_completed": t.is_completed,
         "completed_at": t.completed_at,
         "is_starred": t.is_starred,
@@ -71,7 +75,12 @@ async def _steps_for(session: AsyncSession, tasks: list[Task]) -> dict[int, list
 
 async def _outs(session: AsyncSession, tasks: list[Task]) -> list[dict]:
     steps = await _steps_for(session, tasks)
-    return [_out(t, steps[t.id]) for t in tasks]
+    category_ids = {t.category_id for t in tasks if t.category_id is not None}
+    category_names: dict[int, str] = {}
+    if category_ids:
+        categories = await session.scalars(select(Category).where(Category.id.in_(category_ids)))
+        category_names = {category.id: category.name for category in categories.all()}
+    return [_out(t, steps[t.id], category_names.get(t.category_id)) for t in tasks]
 
 
 async def _get_task(
@@ -90,6 +99,17 @@ async def _get_task(
     return task
 
 
+async def _get_category(
+    session: AsyncSession, user: User, category_id: int
+) -> Category:
+    category = await session.scalar(
+        select(Category).where(Category.id == category_id, Category.user_id == user.id)
+    )
+    if category is None:
+        raise HTTPException(400, "Danh mục không hợp lệ")
+    return category
+
+
 def _active(user: User):
     return (
         Task.user_id == user.id,
@@ -100,7 +120,13 @@ def _active(user: User):
 
 
 def _order():
-    return (Task.due_date, Task.due_time.nulls_last(), Task.id)
+    return (
+        Task.due_date,
+        Task.is_completed.asc(),
+        Task.is_starred.desc(),
+        Task.due_time.nulls_last(),
+        Task.id,
+    )
 
 
 async def _purge(session: AsyncSession, task: Task) -> None:
@@ -163,7 +189,7 @@ async def search_tasks(
     ).all()
     pending = [t for t in tasks if not t.is_completed]
     done = [t for t in tasks if t.is_completed]
-    pending.sort(key=lambda t: (t.due_date, t.due_time is None, t.due_time or time_type.min, t.id))
+    pending.sort(key=lambda t: (t.due_date, not t.is_starred, t.due_time is None, t.due_time or time_type.min, t.id))
     floor = datetime.min.replace(tzinfo=timezone.utc)
     done.sort(key=lambda t: t.completed_at or floor, reverse=True)
     return await _outs(session, (pending + done)[:100])
@@ -176,20 +202,21 @@ async def overdue_tasks(
 ):
     tasks = list(
         (
-            await session.scalars(_overdue_query(user, config.today()))
+            await session.scalars(_overdue_query(user))
         ).all()
     )
     return {"count": len(tasks), "tasks": await _outs(session, tasks)}
 
 
-def _overdue_query(user: User, today: date):
+def _overdue_query(user: User):
     return (
         select(Task)
         .where(
             *_active(user),
             Task.habit_id.is_(None),  # task habit không tính là overdue (Câu 45)
             Task.is_completed.is_(False),
-            Task.due_date < today,
+            Task.deadline_at.is_not(None),
+            Task.deadline_at < utc_now(),
         )
         .order_by(*_order())
     )
@@ -215,7 +242,15 @@ async def list_trash(
         ).all()
     )
     steps = await _steps_for(session, tasks)
-    return [{**_out(t, steps[t.id]), "deleted_at": t.deleted_at} for t in tasks]
+    category_ids = {t.category_id for t in tasks if t.category_id is not None}
+    category_names: dict[int, str] = {}
+    if category_ids:
+        categories = await session.scalars(select(Category).where(Category.id.in_(category_ids)))
+        category_names = {category.id: category.name for category in categories.all()}
+    return [
+        {**_out(t, steps[t.id], category_names.get(t.category_id)), "deleted_at": t.deleted_at}
+        for t in tasks
+    ]
 
 
 # ---------- ghi ----------
@@ -226,19 +261,60 @@ async def create_task(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    request_id = str(body.client_request_id) if body.client_request_id else None
+    if request_id is not None:
+        existing = await session.scalar(
+            select(Task).where(
+                Task.user_id == user.id,
+                Task.create_request_id == request_id,
+            )
+        )
+        if existing is not None:
+            return (await _outs(session, [existing]))[0]
+
+    if body.category_id is not None:
+        await _get_category(session, user, body.category_id)
+
     task = Task(
         user_id=user.id,
         title=body.title,
+        description=body.description,
         due_date=body.due_date,
         due_time=_parse_time(body.time),
+        deadline_at=body.deadline_at,
+        estimated_minutes=body.estimated_minutes,
+        priority=body.priority,
+        category_id=body.category_id,
+        create_request_id=request_id,
         is_starred=body.is_starred,
     )
     session.add(task)
-    await session.flush()
-    for s in body.steps:
-        session.add(Task(user_id=user.id, title=s, due_date=body.due_date, parent_task_id=task.id))
-    await session.commit()
-    return _out(task, list(body.steps))
+    try:
+        await session.flush()
+        for s in body.steps:
+            session.add(
+                Task(
+                    user_id=user.id,
+                    title=s,
+                    due_date=body.due_date,
+                    parent_task_id=task.id,
+                )
+            )
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        if request_id is None:
+            raise
+        existing = await session.scalar(
+            select(Task).where(
+                Task.user_id == user.id,
+                Task.create_request_id == request_id,
+            )
+        )
+        if existing is None:
+            raise
+        return (await _outs(session, [existing]))[0]
+    return (await _outs(session, [task]))[0]
 
 
 @router.post("/bulk", response_model=TaskListOut, status_code=status.HTTP_201_CREATED)
@@ -247,23 +323,45 @@ async def bulk_create(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    """US-30: Lưu hàng loạt các bước phân rã đã được người dùng chỉnh sửa và xác nhận.
+    Đánh dấu is_ai_generated=True, quy đổi day (0..6) theo tuần ISO đang xem, hỗ trợ is_starred và steps.
+    """
     try:
         monday = date.fromisocalendar(body.iso_year, body.iso_week, 1)
     except ValueError:
         raise HTTPException(422, "Tuần ISO không hợp lệ")
-    tasks = [
-        Task(
+
+    created_pairs: list[tuple[Task, list[str]]] = []
+    for item in body.items:
+        due = monday + timedelta(days=item.day)
+        task = Task(
             user_id=user.id,
             title=item.title,
-            due_date=monday + timedelta(days=item.day),
+            due_date=due,
             due_time=_parse_time(item.time),
+            is_starred=item.is_starred,
             is_ai_generated=True,
         )
-        for item in body.items
-    ]
-    session.add_all(tasks)
+        session.add(task)
+        created_pairs.append((task, list(item.steps)))
+
+    await session.flush()
+    for task, steps in created_pairs:
+        for s in steps:
+            session.add(
+                Task(
+                    user_id=user.id,
+                    title=s,
+                    due_date=task.due_date,
+                    parent_task_id=task.id,
+                )
+            )
+
     await session.commit()
-    return {"count": len(tasks), "tasks": [_out(t, []) for t in tasks]}
+    return {
+        "count": len(created_pairs),
+        "tasks": [_out(t, steps) for t, steps in created_pairs],
+    }
 
 
 @router.post("/carry-over", response_model=TaskListOut)
@@ -272,11 +370,12 @@ async def carry_over(
     session: AsyncSession = Depends(get_session),
 ):
     today = config.today()
-    tasks = list((await session.scalars(_overdue_query(user, today))).all())
-    now = utc_now()
+    tasks = list((await session.scalars(_overdue_query(user))).all())
+    end_of_today = datetime.combine(today, time_type.max, tzinfo=config.APP_TZ).astimezone(timezone.utc)
     for t in tasks:
         t.due_date = today
-        t.user_modified_at = now
+        t.deadline_at = end_of_today
+        t.user_modified_at = utc_now()
     if tasks:
         await session.execute(
             update(Task)
@@ -333,6 +432,10 @@ async def update_task(
         task.title = body.title
         changed = True
 
+    if "description" in sent and body.description != task.description:
+        task.description = body.description
+        changed = True
+
     if "due_date" in sent and body.due_date != task.due_date:
         if task.habit_id is not None:
             raise HTTPException(400, "Task của thói quen không thể dời lịch")
@@ -347,6 +450,24 @@ async def update_task(
         if new_time != task.due_time:
             task.due_time = new_time
             changed = True
+
+    if "deadline_at" in sent and body.deadline_at != task.deadline_at:
+        task.deadline_at = body.deadline_at
+        changed = True
+
+    if "estimated_minutes" in sent and body.estimated_minutes != task.estimated_minutes:
+        task.estimated_minutes = body.estimated_minutes
+        changed = True
+
+    if "priority" in sent and body.priority != task.priority:
+        task.priority = body.priority
+        changed = True
+
+    if "category_id" in sent and body.category_id != task.category_id:
+        if body.category_id is not None:
+            await _get_category(session, user, body.category_id)
+        task.category_id = body.category_id
+        changed = True
 
     if "is_starred" in sent and body.is_starred != task.is_starred:
         task.is_starred = body.is_starred
@@ -367,8 +488,6 @@ async def update_task(
     completion_changed = False
     if "is_completed" in sent and body.is_completed != task.is_completed:
         today = config.today()
-        if task.due_date < today:
-            raise HTTPException(400, PAST_LOCK_MSG)
         if task.habit_id is not None and body.is_completed and task.due_date > today:
             raise HTTPException(400, "Chưa thể hoàn thành thói quen của ngày tương lai")
         task.is_completed = body.is_completed

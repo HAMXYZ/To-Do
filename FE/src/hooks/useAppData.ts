@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../api'
-import type { BreakdownItem, DeletedTask, Habit, OverdueTask, SearchResult, Task } from '../types'
+import type { BreakdownItem, Category, DeletedTask, Habit, OverdueTask, SearchResult, Task, TaskPriority } from '../types'
 import { dateToWeekDay, localYmd, type Ymd } from '../utils/dates'
 
 const HABIT_ORDER_KEY = 'focusflow.habitOrder'
@@ -34,6 +34,18 @@ function applyHabitOrder(habits: Habit[]): Habit[] {
 
 export type SignedOutReason = 'expired' | 'logout'
 
+export type QuickTaskDraft = {
+  title: string
+  time: string
+  starred: boolean
+  description: string
+  deadlineAt: string
+  estimatedMinutes?: number
+  priority: TaskPriority
+  categoryName: string
+  clientRequestId: string
+}
+
 interface TodayState {
   date: Ymd
   week: number
@@ -56,12 +68,15 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   const [dayById, setDayById] = useState<Record<number, number>>({})
   const [habitsByWeek, setHabitsByWeek] = useState<Record<number, Record<number, boolean[]>>>({})
   const [habitDefinitions, setHabitDefinitions] = useState<Habit[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [overdue, setOverdue] = useState<OverdueTask[]>([])
   const [deletedTasks, setDeletedTasks] = useState<DeletedTask[]>([])
   const [undoItem, setUndoItem] = useState<DeletedTask | null>(null)
   const [matchingTasks, setMatchingTasks] = useState<SearchResult[]>([])
   const [me, setMe] = useState<api.UserInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pendingTaskIds, setPendingTaskIds] = useState<Set<number>>(() => new Set())
+  const pendingTaskIdsRef = useRef<Set<number>>(new Set())
 
   const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadSeq = useRef<Record<number, number>>({})
@@ -135,6 +150,10 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
     setHabitDefinitions(applyHabitOrder(await api.listHabits()))
   }, [])
 
+  const refreshCategories = useCallback(async (): Promise<void> => {
+    setCategories(await api.listCategories())
+  }, [])
+
   const refreshTrash = useCallback(async (): Promise<void> => {
     try {
       const items = await api.getTrash()
@@ -174,9 +193,9 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
       setMe(user)
       setToday({ date: t.date, week: t.week, day: t.day })
       setWeekOffset((w) => (w === clientToday().week ? t.week : w))
-      await Promise.all([refreshHabits(), refreshOverdue()])
+      await Promise.all([refreshHabits(), refreshCategories(), refreshOverdue()])
     })
-  }, [run, refreshHabits, refreshOverdue])
+  }, [run, refreshHabits, refreshCategories, refreshOverdue])
 
   // Mỗi lần đổi tuần: sinh task habit còn thiếu rồi tải tuần đó
   useEffect(() => {
@@ -262,14 +281,22 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   )
 
   const toggleTask = useCallback(
-    (id: number) => {
+    async (id: number) => {
+      if (pendingTaskIdsRef.current.has(id)) return
       const task = live.current.tasksByWeek[live.current.weekOffset]?.find((t) => t.id === id)
       if (!task) return
-      void patchTask(
-        id,
-        { done: !task.done, completedAt: task.done ? undefined : Date.now() },
-        { done: !task.done },
-      )
+      pendingTaskIdsRef.current.add(id)
+      setPendingTaskIds(new Set(pendingTaskIdsRef.current))
+      try {
+        await patchTask(
+          id,
+          { done: !task.done, completedAt: task.done ? undefined : Date.now() },
+          { done: !task.done },
+        )
+      } finally {
+        pendingTaskIdsRef.current.delete(id)
+        setPendingTaskIds(new Set(pendingTaskIdsRef.current))
+      }
     },
     [patchTask],
   )
@@ -289,13 +316,30 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   )
 
   const addTask = useCallback(
-    (day: number, title: string, time: string): Promise<boolean> =>
+    (day: number, draft: QuickTaskDraft): Promise<boolean> =>
       run(async () => {
         const week = live.current.weekOffset
-        await api.createTask({ week, day, title: title.trim(), time })
-        await Promise.all([loadWeek(week, false), refreshOverdue()])
+        const categoryName = draft.categoryName.trim()
+        const category = categoryName ? await api.createCategory(categoryName) : undefined
+        if (category && !categories.some((item) => item.id === category.id)) {
+          setCategories((current) => current.some((item) => item.id === category.id) ? current : [...current, category])
+        }
+        await api.createTask({
+          week,
+          day,
+          title: draft.title.trim(),
+          time: draft.time,
+          starred: draft.starred,
+          description: draft.description,
+          deadlineAt: draft.deadlineAt,
+          estimatedMinutes: draft.estimatedMinutes,
+          priority: draft.priority,
+          categoryId: category?.id,
+          clientRequestId: draft.clientRequestId,
+        })
+        await Promise.all([loadWeek(week, false), refreshOverdue(), refreshCategories()])
       }),
-    [run, loadWeek, refreshOverdue],
+    [run, loadWeek, refreshOverdue, refreshCategories, categories],
   )
 
   const saveBreakdown = useCallback(
@@ -310,6 +354,27 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
         await Promise.all([loadWeek(week, false), refreshOverdue()])
       }),
     [run, loadWeek, refreshOverdue, remember],
+  )
+
+  /** US-31: Áp dụng đánh dấu sao (⭐) hàng loạt sau khi người dùng xác nhận gợi ý ưu tiên. */
+  const applyPriorityStars = useCallback(
+    (taskIds: number[]): Promise<boolean> =>
+      run(async () => {
+        const week = live.current.weekOffset
+        try {
+          const updated = await api.confirmPrioritySuggestions(taskIds, true)
+          remember(updated.map((u) => ({ task: u.task, day: u.day })))
+        } catch (err) {
+          // Fallback nếu BE chưa bật route /ai/priority-confirm: gọi PATCH từng task
+          if (err instanceof api.ApiError && err.status === 404) {
+            await Promise.all(taskIds.map((id) => api.updateTask(id, { starred: true })))
+          } else {
+            throw err
+          }
+        }
+        await loadWeek(week, false)
+      }),
+    [run, remember, loadWeek],
   )
 
   const moveTask = useCallback(
@@ -497,6 +562,8 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
     getTaskDay,
     habitsByWeek,
     habitDefinitions,
+    categories,
+    pendingTaskIds,
     overdue,
     deletedTasks,
     undoItem,
@@ -510,6 +577,7 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
     toggleTaskStar,
     addTask,
     saveBreakdown,
+    applyPriorityStars,
     moveTask,
     carryOverdue,
     // thùng rác
