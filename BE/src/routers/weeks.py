@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -291,6 +291,7 @@ async def get_weekly_review(
 
 @router.post("/{iso_year}/{iso_week}/review/generate")
 async def generate_weekly_review(
+    response: Response,
     iso_year: int = Path(..., ge=2000, le=2100),
     iso_week: int = Path(..., ge=1, le=53),
     user: User = Depends(get_current_user),
@@ -304,7 +305,7 @@ async def generate_weekly_review(
         "Không bịa lý do, cảm xúc, deadline hoặc sự kiện. Trả đúng JSON {\"summary_text\": string}, không markdown."
     )
     try:
-        result, provider = await generate_json(
+        result, provider, quota_info = await generate_json(
             user.id,
             system,
             {
@@ -316,6 +317,9 @@ async def generate_weekly_review(
                 "tasks": stats["tasks"],
             },
         )
+        response.headers["X-RateLimit-Limit"] = str(quota_info["limit"])
+        response.headers["X-RateLimit-Remaining"] = str(quota_info["remaining"])
+        response.headers["X-RateLimit-Reset"] = str(quota_info["reset_in_seconds"])
         summary = result.get("summary_text")
         if not isinstance(summary, str) or not 20 <= len(summary.strip()) <= 4000:
             raise HTTPException(502, "AI trả về weekly review không hợp lệ. Hãy thử lại.")
@@ -326,7 +330,19 @@ async def generate_weekly_review(
             "stats": stats,
         }
     except AIServiceError as exc:
-        raise HTTPException(exc.status_code, exc.message) from exc
+        headers: dict[str, str] = {}
+        if exc.retry_after is not None:
+            headers["Retry-After"] = str(exc.retry_after)
+        if exc.details.get("limit") is not None:
+            headers["X-RateLimit-Limit"] = str(exc.details["limit"])
+            headers["X-RateLimit-Remaining"] = str(exc.details["remaining"])
+            headers["X-RateLimit-Reset"] = str(exc.details["reset_in_seconds"])
+        detail = {
+            "code": exc.code,
+            "message": exc.message,
+            "retry_after": exc.retry_after,
+        }
+        raise HTTPException(status_code=exc.status_code, detail=detail, headers=headers) from exc
 
 
 @router.put("/{iso_year}/{iso_week}/review")

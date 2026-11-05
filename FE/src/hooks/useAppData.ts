@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../api'
 import type { BreakdownItem, Category, DeletedTask, Habit, OverdueTask, SearchResult, Task, TaskPriority } from '../types'
-import { dateToWeekDay, localYmd, type Ymd } from '../utils/dates'
+import { dateToWeekDay, dayToDate, localYmd, type Ymd } from '../utils/dates'
 
 const HABIT_ORDER_KEY = 'focusflow.habitOrder'
 
@@ -262,6 +262,14 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
       const week = live.current.weekOffset
       const original = live.current.tasksByWeek[week]?.find((t) => t.id === id)
       if (!original) return
+      if (patch.done !== undefined && patch.done !== original.done) {
+        const day = live.current.dayById[id] ?? 0
+        const taskDate = dayToDate(week, day)
+        if (taskDate < live.current.today.date) {
+          fail(new Error('Không thể thay đổi trạng thái hoàn thành của công việc trong quá khứ'))
+          return
+        }
+      }
       replaceTask(week, { ...original, ...optimistic })
       try {
         const r = await api.updateTask(id, patch)
@@ -285,6 +293,12 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
       if (pendingTaskIdsRef.current.has(id)) return
       const task = live.current.tasksByWeek[live.current.weekOffset]?.find((t) => t.id === id)
       if (!task) return
+      const day = live.current.dayById[id] ?? 0
+      const taskDate = dayToDate(live.current.weekOffset, day)
+      if (taskDate < live.current.today.date) {
+        fail(new Error('Không thể thay đổi trạng thái hoàn thành của công việc trong quá khứ'))
+        return
+      }
       pendingTaskIdsRef.current.add(id)
       setPendingTaskIds(new Set(pendingTaskIdsRef.current))
       try {
@@ -298,7 +312,7 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
         setPendingTaskIds(new Set(pendingTaskIdsRef.current))
       }
     },
-    [patchTask],
+    [patchTask, fail],
   )
 
   const updateTaskTitle = useCallback(

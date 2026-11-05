@@ -1,0 +1,36 @@
+{
+  "hotspots": [
+    {
+      "label": "useAppData()",
+      "risk": 0.602,
+      "type": "FUNCTION"
+    },
+    {
+      "label": "useReminderNotifications()",
+      "risk": 0.208,
+      "type": "FUNCTION"
+    },
+    {
+      "label": "request()",
+      "risk": 0.204,
+      "type": "FUNCTION"
+    },
+    {
+      "label": "App.tsx",
+      "risk": 0.204,
+      "type": "FUNCTION"
+    },
+    {
+      "label": "seed_user_data()",
+      "risk": 0.192,
+      "type": "FUNCTION"
+    }
+  ],
+  "blast_radius": {
+    "Task": 45,
+    "Habit": 43,
+    "HabitFrequency": 40,
+    "User": 35,
+    "HabitLog": 34
+  }
+}

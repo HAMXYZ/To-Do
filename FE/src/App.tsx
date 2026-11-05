@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import Icon, { type IconName } from './components/Icon'
 import { QuickAddTask, InlineTimePicker } from './components/InlineAddTask'
 import AIBreakdownModal from './components/AIBreakdownModal'
+import AIAssistantModal from './components/AIAssistantModal'
 import AIPriorityModal from './components/AIPriorityModal'
 import AIHabitRecognitionModal from './components/AIHabitRecognitionModal'
 import WeeklyReviewModal from './components/WeeklyReviewModal'
@@ -15,8 +16,14 @@ import type { Task, BreakdownItem, Habit, OverdueTask, SearchResult } from './ty
 import * as api from './api'
 import { useAppData, type QuickTaskDraft, type SignedOutReason } from './hooks/useAppData'
 import { sortTasksByPriorityAndTime } from './utils/aiBreakdown'
-import { localYmd, ymdToLocalDate } from './utils/dates'
+import { localYmd, ymdToLocalDate, dayToDate } from './utils/dates'
 import { getWeekLabelForOffset, WEEK_ANCHOR_MONDAY } from './utils/week'
+import {
+  showAppNotification,
+  getNotificationPermission,
+  requestNotificationPermission,
+} from './utils/notifications'
+import { useReminderNotifications } from './hooks/useReminderNotifications'
 
 const startMonday = WEEK_ANCHOR_MONDAY
 const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -55,20 +62,288 @@ function Ring({ value, size = 42, stroke = 4, children }: { value: number; size?
   </div>
 }
 
+function CustomCalendarPopover({
+  initialDate,
+  onSelectDate,
+  onClose,
+}: {
+  initialDate: Date
+  onSelectDate: (date: Date) => void
+  onClose: () => void
+}) {
+  const today = new Date()
+  const [viewMonth, setViewMonth] = useState(initialDate.getMonth())
+  const [viewYear, setViewYear] = useState(initialDate.getFullYear())
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: PointerEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('pointerdown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onClose])
+
+  function prevMonth() {
+    if (viewMonth === 0) {
+      setViewMonth(11)
+      setViewYear((y) => y - 1)
+    } else {
+      setViewMonth((m) => m - 1)
+    }
+  }
+
+  function nextMonth() {
+    if (viewMonth === 11) {
+      setViewMonth(0)
+      setViewYear((y) => y + 1)
+    } else {
+      setViewMonth((m) => m + 1)
+    }
+  }
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ]
+  const dayHeaders = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+
+  const firstDayOfMonth = new Date(viewYear, viewMonth, 1)
+  const startingDay = firstDayOfMonth.getDay() // 0 = Sunday
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate()
+  const daysInPrevMonth = new Date(viewYear, viewMonth, 0).getDate()
+
+  const days: { date: Date; currentMonth: boolean }[] = []
+  for (let i = startingDay - 1; i >= 0; i--) {
+    days.push({
+      date: new Date(viewYear, viewMonth - 1, daysInPrevMonth - i),
+      currentMonth: false,
+    })
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    days.push({
+      date: new Date(viewYear, viewMonth, d),
+      currentMonth: true,
+    })
+  }
+  const remaining = 42 - days.length
+  for (let d = 1; d <= remaining; d++) {
+    days.push({
+      date: new Date(viewYear, viewMonth + 1, d),
+      currentMonth: false,
+    })
+  }
+
+  const isSameDay = (d1: Date, d2: Date) =>
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label="Calendar date picker"
+      className="absolute right-0 top-[calc(100%+8px)] z-50 w-[290px] rounded-2xl border border-[#e5ede7] bg-white p-3.5 text-[#253d2e] shadow-[0_16px_45px_rgba(21,51,31,0.18)]"
+    >
+      <div className="mb-3 flex items-center justify-between px-1">
+        <span className="text-[13px] font-bold text-[#274431]">
+          {monthNames[viewMonth]} {viewYear}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={prevMonth}
+            aria-label="Previous month"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#e2e8f0] text-[#667c6c] transition hover:bg-[#edf9ef] hover:text-[#27844b]"
+          >
+            <Icon name="chevronLeft" size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={nextMonth}
+            aria-label="Next month"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#e2e8f0] text-[#667c6c] transition hover:bg-[#edf9ef] hover:text-[#27844b]"
+          >
+            <Icon name="chevronRight" size={13} />
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-1.5 grid grid-cols-7 text-center">
+        {dayHeaders.map((dh) => (
+          <span key={dh} className="text-[10px] font-bold uppercase text-[#8fa093]">
+            {dh}
+          </span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center">
+        {days.map((item, idx) => {
+          const isToday = isSameDay(item.date, today)
+          const isSelected = isSameDay(item.date, initialDate)
+          return (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => onSelectDate(item.date)}
+              className={`flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-medium transition ${
+                isSelected
+                  ? 'bg-[#4ade80] font-bold text-[#144727] shadow-sm'
+                  : isToday
+                  ? 'border border-[#4ade80] font-bold text-[#237744] hover:bg-[#dcfce7]'
+                  : item.currentMonth
+                  ? 'text-[#253d2e] hover:bg-[#edf9ef]'
+                  : 'text-[#c2cec5] hover:bg-[#f6faf7]'
+              }`}
+            >
+              {item.date.getDate()}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between border-t border-[#eef2ef] px-1 pt-2.5 text-[11px] font-semibold">
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[#849688] transition hover:text-[#e11d48]"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectDate(today)}
+          className="text-[#2ca258] transition hover:underline"
+        >
+          Today
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CustomYearDropdown({
+  year,
+  availableYears,
+  onChange,
+  dark,
+  surface,
+}: {
+  year: number
+  availableYears: number[]
+  onChange: (year: number) => void
+  dark: boolean
+  surface: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: PointerEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-label="Select year"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className={`flex h-10 items-center gap-2 rounded-[10px] border px-3 text-[12px] font-semibold transition ${surface} focus-visible:outline-2 focus-visible:outline-[#4ade80]`}
+      >
+        <Icon name="calendar" size={15} className="text-[#64c48b]" />
+        <span>{year}</span>
+        <Icon
+          name="chevronDown"
+          size={13}
+          className={`text-[#7f9684] transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label="Available years"
+          className={`absolute right-0 top-full mt-1.5 z-50 min-w-[130px] overflow-hidden rounded-xl border p-1 shadow-[0_12px_36px_rgba(20,50,30,0.18)] ${
+            dark
+              ? 'border-[#2d4739] bg-[#1a2d23] text-[#e0fae8]'
+              : 'border-[#e2ece4] bg-white text-[#243c2d]'
+          }`}
+        >
+          {availableYears.map((option) => {
+            const isSelected = option === year
+            return (
+              <button
+                key={option}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  onChange(option)
+                  setOpen(false)
+                }}
+                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] font-semibold transition ${
+                  isSelected
+                    ? dark
+                      ? 'bg-[#2a4d3a] text-[#8aebb1]'
+                      : 'bg-[#dcfce7] text-[#1c6439]'
+                    : dark
+                    ? 'text-[#c0dec9] hover:bg-[#233c2f]'
+                    : 'text-[#324b3a] hover:bg-[#f1f7f3]'
+                }`}
+              >
+                <span>{option}</span>
+                {isSelected && <span className="text-[11px] font-bold">✓</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function WeekPicker({ weekOffset, onChange, tasksByWeek, getTaskDay }: { weekOffset: number; onChange: (offset: number) => void; tasksByWeek: Record<number, Task[]>; getTaskDay: (id: number) => number }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [showBacklog, setShowBacklog] = useState(false)
+  const [calendarOpen, setCalendarOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const calendarRef = useRef<HTMLInputElement>(null)
   const monday = addDays(startMonday, weekOffset * 7)
   const sunday = addDays(monday, 6)
 
   useEffect(() => {
     function dismiss(event: PointerEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+        setCalendarOpen(false)
+      }
     }
-    function escape(event: KeyboardEvent) { if (event.key === 'Escape') setOpen(false) }
+    function escape(event: KeyboardEvent) { if (event.key === 'Escape') { setOpen(false); setCalendarOpen(false) } }
     document.addEventListener('pointerdown', dismiss)
     document.addEventListener('keydown', escape)
     return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape) }
@@ -78,6 +353,7 @@ function WeekPicker({ weekOffset, onChange, tasksByWeek, getTaskDay }: { weekOff
     onChange(offset)
     setOpen(false)
     setShowBacklog(false)
+    setCalendarOpen(false)
     setQuery('')
   }
 
@@ -115,10 +391,24 @@ function WeekPicker({ weekOffset, onChange, tasksByWeek, getTaskDay }: { weekOff
     <button type="button" onClick={() => { setOpen(value => !value); setShowBacklog(false) }} aria-label="Choose a week" aria-expanded={open} aria-controls="week-picker-menu" className={`flex h-10 min-w-0 flex-1 items-center justify-between gap-1.5 rounded-lg border bg-white px-2 text-[10px] font-semibold text-[#344739] transition sm:min-w-[280px] sm:px-4 sm:text-[13px] ${open ? 'border-[#91dda6] shadow-[0_0_0_3px_rgba(74,222,128,0.12)]' : 'border-[#e2e8f0] hover:border-[#b4d9bd]'} focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80]`}><span className="truncate whitespace-nowrap">{getWeekLabelForOffset(weekOffset)}: {monthDay(monday)} - {monthDay(sunday)}, {sunday.getFullYear()}</span><Icon name="chevronDown" size={14} className={`shrink-0 text-[#7f9684] transition-transform ${open ? 'rotate-180' : ''}`} /></button>
     <button type="button" onClick={() => onChange(weekOffset + 1)} aria-label="Next week" className="flex h-10 w-9 shrink-0 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white text-[#66776c] transition hover:border-[#95d9a8] hover:text-[#27844b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80] sm:w-10"><Icon name="chevronRight" size={17} /></button>
 
-    {open && <div id="week-picker-menu" role="dialog" aria-label="Choose a week" className="absolute left-1/2 top-[calc(100%+12px)] z-40 w-[min(400px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-2xl border border-[#e5ede7] bg-white shadow-[0_12px_35px_rgba(21,51,31,0.1)]">
+    {open && <div id="week-picker-menu" role="dialog" aria-label="Choose a week" className="absolute left-1/2 top-[calc(100%+12px)] z-40 w-[min(400px,calc(100vw-32px))] -translate-x-1/2 overflow-visible rounded-2xl border border-[#e5ede7] bg-white shadow-[0_12px_35px_rgba(21,51,31,0.1)]">
       <div className="border-b border-[#eef2ef] p-4">
         <div className="mb-3 flex items-center justify-between"><span className="text-[12px] font-bold text-[#314a39]">Find a week</span><span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9daa9f]">WEEKLY PLANNER</span></div>
-        <div className="relative flex h-11 items-center rounded-[10px] border border-[#e2e8f0] bg-[#f8faf9] transition focus-within:border-[#62d786] focus-within:bg-white focus-within:ring-[3px] focus-within:ring-[#4ade80]/15"><Icon name="search" size={17} className="ml-3 shrink-0 text-[#90a297]" /><input type="search" value={query} onChange={event => { setQuery(event.target.value); setShowBacklog(false) }} onKeyDown={event => { if (event.key === 'Enter' && searchedDate) selectWeek(offsetForDate(searchedDate)) }} placeholder="Search date or week (e.g. 2026-09-29 or Oct 2026)" aria-label="Search date or week" className="min-w-0 flex-1 bg-transparent px-2.5 text-[11px] text-[#334e3c] outline-none placeholder:text-[#a2afa5]" /><button type="button" onClick={() => { try { calendarRef.current?.showPicker() } catch { calendarRef.current?.click() } }} aria-label="Open calendar picker" className="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#69aa7c] hover:bg-[#e8f7ec]"><Icon name="calendar" size={16} /></button><input ref={calendarRef} type="date" aria-label="Jump to a date" className="absolute bottom-0 right-5 h-0 w-0 opacity-0" onChange={event => { if (event.target.value) { const date = dateFromSearch(event.target.value); if (date) selectWeek(offsetForDate(date)) } }} /></div>
+        <div className="relative flex h-11 items-center rounded-[10px] border border-[#e2e8f0] bg-[#f8faf9] transition focus-within:border-[#62d786] focus-within:bg-white focus-within:ring-[3px] focus-within:ring-[#4ade80]/15">
+          <Icon name="search" size={17} className="ml-3 shrink-0 text-[#90a297]" />
+          <input type="search" value={query} onChange={event => { setQuery(event.target.value); setShowBacklog(false) }} onKeyDown={event => { if (event.key === 'Enter' && searchedDate) selectWeek(offsetForDate(searchedDate)) }} placeholder="Search date or week (e.g. 2026-09-29 or Oct 2026)" aria-label="Search date or week" className="min-w-0 flex-1 bg-transparent px-2.5 text-[11px] text-[#334e3c] outline-none placeholder:text-[#a2afa5]" />
+          <button type="button" onClick={() => setCalendarOpen(prev => !prev)} aria-label="Open calendar picker" aria-expanded={calendarOpen} className={`mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${calendarOpen ? 'bg-[#dcfce7] text-[#248149]' : 'text-[#69aa7c] hover:bg-[#e8f7ec]'}`}><Icon name="calendar" size={16} /></button>
+          {calendarOpen && (
+            <CustomCalendarPopover
+              initialDate={searchedDate || monday}
+              onSelectDate={date => {
+                selectWeek(offsetForDate(date))
+                setCalendarOpen(false)
+              }}
+              onClose={() => setCalendarOpen(false)}
+            />
+          )}
+        </div>
       </div>
       <div className="flex gap-2 border-b border-[#eef2ef] p-3.5"><button type="button" onClick={() => selectWeek(offsetForDate(new Date()))} className="flex flex-1 items-center justify-center gap-1.5 rounded-[9px] bg-[#4ade80] px-2 py-2.5 text-[11px] font-bold text-[#185432] transition hover:bg-[#38d875]"><Icon name="calendar" size={14} /> Jump to Current Week</button><button type="button" onClick={() => setShowBacklog(value => !value)} aria-pressed={showBacklog} className={`flex flex-1 items-center justify-center gap-1.5 rounded-[9px] border px-2 py-2.5 text-[11px] font-semibold transition ${showBacklog ? 'border-[#93dca7] bg-[#edf9ef] text-[#2f9050]' : 'border-[#e5ebe6] bg-white text-[#6b8070] hover:bg-[#f1f5f9]'}`}><Icon name="inbox" size={14} /> Backlog Tasks</button></div>
       <div className="max-h-[285px] overflow-y-auto p-2.5" role="listbox" aria-label={showBacklog ? 'Backlog tasks' : 'Weeks'}>
@@ -209,7 +499,16 @@ function HabitReviewModal({ selectedMonday, weekOffset, onClose }: { selectedMon
             <button onClick={() => setView('week')} aria-pressed={view === 'week'} className={`rounded-[7px] px-3 py-2 text-[11px] font-bold transition sm:px-4 ${view === 'week' ? dark ? 'bg-[#2b4b42] text-[#8aebb1]' : 'bg-white text-[#2e9653] shadow-sm' : muted}`}>Weekly View</button>
             <button onClick={() => setView('year')} aria-pressed={view === 'year'} className={`rounded-[7px] px-3 py-2 text-[11px] font-bold transition sm:px-4 ${view === 'year' ? dark ? 'bg-[#2b4b42] text-[#8aebb1]' : 'bg-white text-[#2e9653] shadow-sm' : muted}`}>Yearly Heatmap View</button>
           </div>
-          <div className="flex items-center gap-2"><label className={`flex h-10 items-center gap-2 rounded-[10px] border px-3 text-[12px] font-semibold ${surface}`}><Icon name="calendar" size={15} className="text-[#64c48b]" /><select value={year} onChange={event => setYear(Number(event.target.value))} aria-label="Select year" className="cursor-pointer bg-transparent outline-none">{(hm?.availableYears ?? heatmap?.availableYears ?? [year]).map(option => <option key={option} value={option} className="text-[#1f3529]">{option}</option>)}</select></label><button onClick={() => setDark(value => !value)} aria-label={`Switch to ${dark ? 'light' : 'dark'} theme`} title={`Switch to ${dark ? 'light' : 'dark'} theme`} className={`flex h-10 w-10 items-center justify-center rounded-[10px] border transition ${surface} ${dark ? 'text-[#a9d9bd]' : 'text-[#6b9378]'}`}><Icon name={dark ? 'sun' : 'moon'} size={17} /></button></div>
+          <div className="flex items-center gap-2">
+            <CustomYearDropdown
+              year={year}
+              availableYears={hm?.availableYears ?? heatmap?.availableYears ?? [year]}
+              onChange={setYear}
+              dark={dark}
+              surface={surface}
+            />
+            <button onClick={() => setDark(value => !value)} aria-label={`Switch to ${dark ? 'light' : 'dark'} theme`} title={`Switch to ${dark ? 'light' : 'dark'} theme`} className={`flex h-10 w-10 items-center justify-center rounded-[10px] border transition ${surface} ${dark ? 'text-[#a9d9bd]' : 'text-[#6b9378]'}`}><Icon name={dark ? 'sun' : 'moon'} size={17} /></button>
+          </div>
         </div>
 
         <div className="mb-5 grid grid-cols-3 gap-2.5 sm:gap-3"><div className={`rounded-2xl border p-3 sm:p-4 ${statSurface}`}><div className={`text-[10px] font-semibold ${muted}`}>DAYS TRACKED</div><div className="mt-1 text-[21px] font-bold tracking-[-0.05em] sm:text-[25px]">{hm ? hm.daysTracked : '–'}</div></div><div className={`rounded-2xl border p-3 sm:p-4 ${statSurface}`}><div className={`text-[10px] font-semibold ${muted}`}>YOUR HABITS</div><div className="mt-1 text-[21px] font-bold tracking-[-0.05em] sm:text-[25px]">{hm ? String(hm.habitCount).padStart(2, '0') : '–'}</div></div><div className={`rounded-2xl border p-3 sm:p-4 ${statSurface}`}><div className={`text-[10px] font-semibold ${muted}`}>CONSISTENCY</div><div className={`mt-1 text-[21px] font-bold tracking-[-0.05em] sm:text-[25px] ${dark ? 'text-[#75dfa0]' : 'text-[#0f172a]'}`}>{hm ? hm.consistency : 0}%</div></div></div>
@@ -232,10 +531,68 @@ function ProfileMenu({ dark, setDark, showHabits, setShowHabits, compactCards, s
 }) {
   const [open, setOpen] = useState(false)
   const [section, setSection] = useState<ProfileSection | null>(null)
-  const [reminders, setReminders] = useState(true)
-  const [summary, setSummary] = useState(false)
   const [message, setMessage] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Cấu hình thông báo & nhắc nhở (US-27, US-28)
+  const [reminderLeadMinutes, setReminderLeadMinutes] = useState<number | null>(15)
+  const [reminderTime, setReminderTime] = useState('20:00')
+  const [playSound, setPlaySound] = useState(true)
+  const [savingSettings, setSavingSettings] = useState(false)
+  const [settingsNotice, setSettingsNotice] = useState('')
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>('default')
+
+  useEffect(() => {
+    setNotifPermission(getNotificationPermission())
+  }, [open, section])
+
+  useEffect(() => {
+    if (open && section === 'notifications') {
+      api.getSettings()
+        .then((s) => {
+          setReminderLeadMinutes(s.reminderLeadMinutes)
+          setReminderTime(s.reminderTime)
+        })
+        .catch(() => {})
+    }
+  }, [open, section])
+
+  async function handleSaveSettings() {
+    setSavingSettings(true)
+    setSettingsNotice('')
+    try {
+      await api.updateSettings({
+        reminderLeadMinutes,
+        reminderTime,
+      })
+      setSettingsNotice('Đã lưu cấu hình nhắc nhở thành công! (Múi giờ Asia/Ho_Chi_Minh)')
+    } catch {
+      setSettingsNotice('Lỗi khi lưu cấu hình. Vui lòng thử lại!')
+    } finally {
+      setSavingSettings(false)
+    }
+  }
+
+  async function handleRequestPermission() {
+    const res = await requestNotificationPermission()
+    setNotifPermission(res)
+    if (res === 'granted') {
+      setSettingsNotice('Đã cấp quyền thông báo thành công!')
+    } else {
+      setSettingsNotice('Quyền thông báo bị từ chối hoặc bị chặn bởi hệ thống.')
+    }
+  }
+
+  function handleTestNotification() {
+    showAppNotification({
+      title: '⏰ FocusFlow · Kiểm tra thông báo',
+      body: 'Hệ thống thông báo và âm báo Windows đang hoạt động chính xác!',
+      playSound,
+      onClick: () => {
+        window.focus()
+      },
+    })
+  }
 
   useEffect(() => {
     if (!open) return
@@ -254,10 +611,10 @@ function ProfileMenu({ dark, setDark, showHabits, setShowHabits, compactCards, s
   ]
 
   return <div ref={menuRef} className="relative inline-block shrink-0">
-    <button type="button" onClick={() => { setOpen(value => !value); setMessage('') }} aria-label="Open user profile menu" aria-expanded={open} aria-haspopup="menu" className="flex h-10 w-10 items-center justify-center rounded-full border-[3px] border-white bg-[#e6dbcb] text-[13px] font-bold text-[#6b594c] shadow-[0_0_0_1px_#e8eeea] transition hover:shadow-[0_0_0_2px_#4ade80]">{name.split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase() || 'JD'}</button>
+    <button type="button" onClick={() => { setOpen(value => !value); setMessage(''); setSettingsNotice('') }} aria-label="Open user profile menu" aria-expanded={open} aria-haspopup="menu" className="flex h-10 w-10 items-center justify-center rounded-full border-[3px] border-white bg-[#e6dbcb] text-[13px] font-bold text-[#6b594c] shadow-[0_0_0_1px_#e8eeea] transition hover:shadow-[0_0_0_2px_#4ade80]">{name.split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase() || 'JD'}</button>
     <AnimatePresence>
     {open && <motion.div
-      className="absolute right-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] origin-top-right overflow-hidden rounded-2xl border border-gray-100 bg-white p-2 text-[#0f172a] shadow-xl"
+      className="absolute right-0 top-full z-50 mt-2 w-84 max-w-[calc(100vw-2rem)] origin-top-right overflow-hidden rounded-2xl border border-gray-100 bg-white p-2 text-[#0f172a] shadow-xl"
       role="menu"
       aria-label="User profile"
       initial={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -267,11 +624,87 @@ function ProfileMenu({ dark, setDark, showHabits, setShowHabits, compactCards, s
     >
       <div className="flex items-center gap-3 px-3 py-3.5"><span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e6dbcb] text-[13px] font-bold text-[#6b594c]">{name.split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase() || 'JD'}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-bold">{name}</p><p className="truncate text-[11px] text-[#849489]">{email}</p></div><span className="rounded-full bg-[#dcfce7] px-2 py-1 text-[9px] font-bold text-[#267c47]">PRO</span></div>
       <div className="my-1 border-t border-[#edf1ee]" />
-      {options.map(option => <button type="button" key={option.section} role="menuitem" onClick={() => { setSection(current => current === option.section ? null : option.section); setMessage('') }} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-[#f4faf5] ${section === option.section ? 'bg-[#f0faf2]' : ''}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f0f8f1] text-[#50a76c]"><Icon name={option.icon} size={16} /></span><span className="min-w-0 flex-1"><span className="block text-[12px] font-semibold text-[#253d2e]">{option.title}</span><span className="block text-[10px] text-[#8b9c8f]">{option.description}</span></span><Icon name="chevronRight" size={14} className="text-[#96a99b]" /></button>)}
+      {options.map(option => <button type="button" key={option.section} role="menuitem" onClick={() => { setSection(current => current === option.section ? null : option.section); setMessage(''); setSettingsNotice('') }} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-[#f4faf5] ${section === option.section ? 'bg-[#f0faf2]' : ''}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f0f8f1] text-[#50a76c]"><Icon name={option.icon} size={16} /></span><span className="min-w-0 flex-1"><span className="block text-[12px] font-semibold text-[#253d2e]">{option.title}</span><span className="block text-[10px] text-[#8b9c8f]">{option.description}</span></span><Icon name="chevronRight" size={14} className="text-[#96a99b]" /></button>)}
       <button type="button" role="menuitem" onClick={() => { setOpen(false); onOpenTrash() }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-[#fff5f4]"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#fff0ef] text-[#cf756e]"><Icon name="trash" size={16} /></span><span className="flex-1"><span className="block text-[12px] font-semibold text-[#253d2e]">Trash bin</span><span className="block text-[10px] text-[#8b9c8f]">Restore or permanently delete tasks</span></span></button>
       {section && <div className="mx-2 my-2 rounded-xl border border-[#e1efe4] bg-[#f7fcf8] p-3 text-[11px] text-[#344c3b]">
         {section === 'profile' && <div className="space-y-2"><label className="block font-semibold">Display name<input value={name} onChange={event => setName(event.target.value)} className="mt-1 w-full rounded-lg border border-[#dfeae0] bg-white px-2 py-1.5 font-normal outline-none focus:border-[#4ade80]" /></label><label className="block font-semibold">Email<input type="email" value={email} onChange={event => setEmail(event.target.value)} className="mt-1 w-full rounded-lg border border-[#dfeae0] bg-white px-2 py-1.5 font-normal outline-none focus:border-[#4ade80]" /></label><p className="text-[#819486]">Password changes require an account service.</p></div>}
-        {section === 'notifications' && <div className="space-y-2"><label className="flex items-center justify-between gap-2">Task reminders <input type="checkbox" checked={reminders} onChange={event => setReminders(event.target.checked)} className="accent-[#4ade80]" /></label><label className="flex items-center justify-between gap-2">End-of-day summary <input type="checkbox" checked={summary} onChange={event => setSummary(event.target.checked)} className="accent-[#4ade80]" /></label><p className="text-[#819486]">Preferences are local to this preview; notifications are not connected.</p></div>}
+        
+        {/* US-27 & US-28: Notification Preferences */}
+        {section === 'notifications' && <div className="space-y-3">
+          <div>
+            <label className="block font-semibold text-[11px] text-[#253d2e]">Nhắc trước deadline:</label>
+            <select
+              value={reminderLeadMinutes === null ? 'disabled' : String(reminderLeadMinutes)}
+              onChange={(e) => setReminderLeadMinutes(e.target.value === 'disabled' ? null : Number(e.target.value))}
+              className="mt-1 w-full rounded-lg border border-[#dfeae0] bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#4ade80]"
+            >
+              <option value="15">15 phút trước deadline (Mặc định)</option>
+              <option value="5">5 phút trước deadline</option>
+              <option value="10">10 phút trước deadline</option>
+              <option value="30">30 phút trước deadline</option>
+              <option value="disabled">Tắt nhắc trước deadline</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-[11px] text-[#253d2e]">Giờ tổng kết cuối ngày:</label>
+            <input
+              type="time"
+              value={reminderTime}
+              onChange={(e) => setReminderTime(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-[#dfeae0] bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#4ade80]"
+            />
+            <p className="mt-0.5 text-[9px] text-[#819486]">Múi giờ máy chủ: Asia/Ho_Chi_Minh (GMT+7)</p>
+          </div>
+
+          <label className="flex items-center justify-between gap-2 pt-1">
+            <span className="font-semibold text-[11px] text-[#253d2e]">Âm báo Windows / Chuông:</span>
+            <input
+              type="checkbox"
+              checked={playSound}
+              onChange={(e) => setPlaySound(e.target.checked)}
+              className="accent-[#4ade80]"
+            />
+          </label>
+
+          <div className="border-t border-[#dfeae0] pt-2 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-[10px]">
+              <span>Quyền thông báo:</span>
+              <span className={`font-bold ${notifPermission === 'granted' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {notifPermission === 'granted' ? '✓ Đã cấp quyền' : '⚠️ Chưa cấp quyền'}
+              </span>
+            </div>
+            {notifPermission !== 'granted' && (
+              <button
+                type="button"
+                onClick={() => void handleRequestPermission()}
+                className="w-full rounded-lg border border-amber-300 bg-amber-50 py-1 text-[10px] font-semibold text-amber-800 hover:bg-amber-100"
+              >
+                Cấp quyền thông báo Desktop / Web
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleTestNotification}
+              className="w-full rounded-lg border border-[#dfeae0] bg-white py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              🔔 Thử gửi thông báo mẫu
+            </button>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="button"
+              disabled={savingSettings}
+              onClick={() => void handleSaveSettings()}
+              className="w-full rounded-lg bg-[#4ade80] py-1.5 text-center text-[11px] font-bold text-white transition hover:bg-[#3ec470] disabled:opacity-50"
+            >
+              {savingSettings ? 'Đang lưu...' : 'Lưu cấu hình nhắc nhở'}
+            </button>
+          </div>
+          {settingsNotice && <p role="status" className="mt-1 text-[10px] font-medium text-emerald-700">{settingsNotice}</p>}
+        </div>}
+
         {section === 'appearance' && <div className="flex gap-2">{[false, true].map(value => <button key={String(value)} type="button" onClick={() => setDark(value)} aria-pressed={dark === value} className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-2 font-semibold ${dark === value ? 'border-[#4ade80] bg-[#dcfce7] text-[#276c42]' : 'border-[#e1eae3] bg-white'}`}><Icon name={value ? 'moon' : 'sun'} size={14} />{value ? 'Dark' : 'Pastel light'}</button>)}</div>}
         {section === 'settings' && <div className="space-y-2"><label className="flex items-center justify-between gap-2">Show habit tracker <input type="checkbox" checked={showHabits} onChange={event => setShowHabits(event.target.checked)} className="accent-[#4ade80]" /></label><label className="flex items-center justify-between gap-2">Compact task cards <input type="checkbox" checked={compactCards} onChange={event => setCompactCards(event.target.checked)} className="accent-[#4ade80]" /></label><label className="flex items-center justify-between gap-2">Week starts on <select value={weekStartsSunday ? 'sunday' : 'monday'} onChange={event => setWeekStartsSunday(event.target.value === 'sunday')} className="rounded-lg border border-[#dfeae0] bg-white px-2 py-1 outline-none"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label></div>}
       </div>}
@@ -505,6 +938,14 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
   const [searchQuery, setSearchQuery] = useState('')
   const data = useAppData(searchQuery, onSignedOut)
   const { weekOffset, setWeekOffset, tasksByWeek, getTaskDay, habitDefinitions, overdue, undoItem, deletedTasks } = data
+
+  // US-27 & US-28: Lắng nghe nhắc việc và tổng kết ngày (click thông báo mở tuần hiện tại)
+  useReminderNotifications({
+    enabled: true,
+    playSound: true,
+    onNavigateCurrentWeek: () => setWeekOffset(0),
+    onSignedOut,
+  })
   const { toggleTask, updateTaskTitle, toggleTaskStar, toggleHabit, addHabit, updateHabit, removeHabit, reorderHabit, moveTask, carryOverdue, dismissTask, restoreTask, undoDelete, permanentlyDeleteTask } = data
   const [habitModalOpen, setHabitModalOpen] = useState(false)
   const [habitRecognitionOpen, setHabitRecognitionOpen] = useState(false)
@@ -616,7 +1057,10 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
           <div className="mb-5 flex items-end justify-between gap-2"><div><p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#66ad78]">ONE STEP AT A TIME</p><h2 className="text-[23px] font-bold tracking-[-0.05em] text-[#193729]">Today’s tasks<span className="text-[#4ade80]">.</span></h2></div><div className="flex items-center gap-2"><button type="button" onClick={() => setWeeklyReviewOpen(true)} className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-[10px] font-bold text-emerald-800">Weekly review</button><span className="mb-0.5 rounded-full bg-[#e8f7e9] px-3 py-1.5 text-[11px] font-bold text-[#408b56]">{selectedDone} of {selectedTasks.length} done</span></div></div>
           <div className="space-y-3">
             {selectedTasks.length === 0 && <div className="rounded-2xl border border-[#eaf0e8] bg-white px-5 py-10 text-center"><div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#eaf9ed] text-[#55b472]"><Icon name="list" size={22} /></div><p className="text-[14px] font-semibold text-[#355440]">A little breathing room.</p><p className="mt-1 text-[12px] text-[#8a9b8d]">Tap the button below to add your first task.</p></div>}
-            {selectedTasks.map(task => <MobileTaskCardExternal key={task.id} task={task} pending={data.pendingTaskIds.has(task.id)} focusMode={focusMode} onToggle={() => toggleTask(task.id)} onToggleStar={() => toggleTaskStar(task.id)} onDelete={() => dismissTask(weekOffset, task.id)} onReschedule={() => moveTask(weekOffset, task.id, selectedDay === 6 ? weekOffset + 1 : weekOffset, selectedDay === 6 ? 0 : selectedDay + 1)} />)}
+            {selectedTasks.map(task => {
+              const isPast = dayToDate(weekOffset, selectedDay) < data.today.date
+              return <MobileTaskCardExternal key={task.id} task={task} pending={data.pendingTaskIds.has(task.id)} isPast={isPast} focusMode={focusMode} onToggle={() => toggleTask(task.id)} onToggleStar={() => toggleTaskStar(task.id)} onDelete={() => dismissTask(weekOffset, task.id)} onReschedule={() => moveTask(weekOffset, task.id, selectedDay === 6 ? weekOffset + 1 : weekOffset, selectedDay === 6 ? 0 : selectedDay + 1)} />
+            })}
             {quickAddDay === selectedDay ? <QuickAddTask key={`mobile-${weekOffset}-${selectedDay}`} day={dayNames[selectedDay]} categories={data.categories} onCancel={() => setQuickAddDay(null)} onAdd={draft => addQuickTask(selectedDay, draft)} /> : <button type="button" onClick={() => setQuickAddDay(selectedDay)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#bcdcc4] bg-[#f5fbf6] py-3.5 text-[12px] font-bold text-[#459661]"><Icon name="plus" size={16} /> Add task for today</button>}
           </div>
           {selectedTasks.length > 0 && <p className="mt-5 text-center text-[10px] font-medium text-[#9aad9c]">Swipe right to complete · Swipe left for actions</p>}
@@ -628,7 +1072,18 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
           </section>}
         </main>
       </div>
-      <button type="button" onClick={() => { setNewDay(selectedDay); setModalOpen(true) }} aria-label="Open AI task breakdown" className="fixed bottom-6 right-6 z-50 flex h-[62px] w-[62px] items-center justify-center rounded-full bg-[#4ade80] text-[#164c2b] shadow-lg shadow-[#39b15b]/30 transition active:scale-95"><Icon name="mic" size={25} /><span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-[3px] border-[#fafbf5] bg-white text-[#3db76b]"><Icon name="sparkle" size={13} /></span></button>
+      <button
+        type="button"
+        onClick={() => { setNewDay(selectedDay); setModalOpen(true) }}
+        aria-label="Open AI Assistant & Voice"
+        title="Trợ lý FocusFlow AI & Giọng nói (US-33)"
+        className="fixed bottom-6 right-6 z-50 flex h-[62px] w-[62px] items-center justify-center rounded-full bg-[#4ade80] text-[#164c2b] shadow-lg shadow-[#39b15b]/30 transition active:scale-95"
+      >
+        <Icon name="mic" size={25} />
+        <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-[3px] border-[#fafbf5] bg-white text-[#3db76b]">
+          <Icon name="sparkle" size={13} />
+        </span>
+      </button>
     </div>
     <div className="dashboard-desktop hidden md:block">
     <header className="relative z-50 border-b border-[#e9eeeb] bg-white/95">
@@ -648,7 +1103,15 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
           </div>
           <button type="button" onClick={() => setFocusMode(value => !value)} aria-pressed={focusMode} className={`flex h-10 items-center gap-1.5 rounded-[10px] border px-2 text-[11px] font-bold transition ${focusMode ? 'border-[#f5cf76] bg-[#fff8e7] text-[#9a6d12]' : 'border-[#e8eeea] bg-white text-[#64776c] hover:bg-[#f4faf5]'}`}><Icon name="star" size={14} className={focusMode ? 'fill-current' : ''} /><span className="hidden xl:inline">Focus Mode</span></button>
           <button type="button" onClick={() => setPriorityModalOpen(true)} className="flex h-10 items-center gap-1.5 rounded-[10px] border border-[#f5d88c] bg-[#fff9e8] px-3 text-[12px] font-bold text-[#9a6d12] transition hover:bg-[#fef2cf]" title="View AI priority suggestions (Prototype)"><Icon name="sparkle" size={15} /><span className="hidden xl:inline">AI Priority</span></button>
-          <button onClick={() => { setNewDay(1); setModalOpen(true) }} className="flex h-10 items-center gap-2 rounded-[10px] bg-[#4ade80] px-4 text-[13px] font-bold text-[#14492b] shadow-[0_4px_12px_rgba(74,222,128,0.2)] transition hover:bg-[#36d871]"><Icon name="plus" size={17} /> <span className="hidden sm:inline">Add Task with AI</span><span className="sm:hidden">Add Task</span></button>
+          <button
+            onClick={() => { setNewDay(selectedDay); setModalOpen(true) }}
+            className="flex h-10 items-center gap-2 rounded-[10px] bg-[#4ade80] px-3.5 text-[12px] font-bold text-[#14492b] shadow-[0_4px_12px_rgba(74,222,128,0.2)] transition hover:bg-[#36d871]"
+            title="Trợ lý AI - Hỏi đáp và nhập liệu bằng giọng nói / văn bản (US-33)"
+          >
+            <Icon name="mic" size={16} />
+            <span className="hidden sm:inline">AI Voice Assistant</span>
+            <span className="sm:hidden">AI</span>
+          </button>
           <div className="relative">
             <button onClick={() => setSettingsOpen(value => !value)} aria-label="Settings" aria-expanded={settingsOpen} className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#e8eeea] text-[#64776c] hover:bg-[#f4faf5]"><Icon name="settings" size={19} /></button>
             {settingsOpen && <div className="absolute right-0 top-12 z-30 w-64 rounded-2xl border border-[#e9eeeb] bg-white p-4 shadow-[0_16px_45px_rgba(29,66,43,0.13)]">
@@ -743,20 +1206,24 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
               </div>
               <div className="flex-1 space-y-2">
                 {dayTasks.length === 0 && <p className="px-1 py-6 text-center text-[11px] leading-relaxed text-[#9aa99d]">A fresh page for this day.</p>}
-                {dayTasks.map(task => <PlannerTaskCard
-                  key={task.id}
-                  task={task}
-                  pending={data.pendingTaskIds.has(task.id)}
-                  compact={compactCards}
-                  editMode={editMode}
-                  expanded={expandedTask === task.id}
-                  onToggle={() => toggleTask(task.id)}
-                  onToggleStar={() => toggleTaskStar(task.id)}
-                  onDelete={() => dismissTask(weekOffset, task.id)}
-                  onSaveTitle={title => updateTaskTitle(task.id, title)}
-                  onToggleSteps={() => setExpandedTask(value => value === task.id ? null : task.id)}
-                  focusMode={focusMode}
-                />)}
+                {dayTasks.map(task => {
+                  const isPast = dayToDate(weekOffset, index) < data.today.date
+                  return <PlannerTaskCard
+                    key={task.id}
+                    task={task}
+                    pending={data.pendingTaskIds.has(task.id)}
+                    isPast={isPast}
+                    compact={compactCards}
+                    editMode={editMode}
+                    expanded={expandedTask === task.id}
+                    onToggle={() => toggleTask(task.id)}
+                    onToggleStar={() => toggleTaskStar(task.id)}
+                    onDelete={() => dismissTask(weekOffset, task.id)}
+                    onSaveTitle={title => updateTaskTitle(task.id, title)}
+                    onToggleSteps={() => setExpandedTask(value => value === task.id ? null : task.id)}
+                    focusMode={focusMode}
+                  />
+                })}
               </div>
               <div className="mt-auto pt-3">
                 {quickAddDay === index
@@ -772,7 +1239,22 @@ export default function App({ onSignedOut }: { onSignedOut?: (reason: SignedOutR
     </div>
 
     <AnimatePresence>
-      {modalOpen && <AIBreakdownModal initialDay={newDay} monday={monday} onClose={() => setModalOpen(false)} onSave={saveBreakdown} />}
+      {modalOpen && (
+        <AIAssistantModal
+          currentDay={selectedDay}
+          onClose={() => setModalOpen(false)}
+          onAddTask={async (task) => {
+            return data.addTask(task.day ?? selectedDay, {
+              title: task.title,
+              time: task.time ?? '',
+              starred: task.isStarred ?? false,
+              priority: task.priority ?? 'medium',
+              categoryName: '',
+              clientRequestId: `ai-voice-${Date.now()}`,
+            })
+          }}
+        />
+      )}
     </AnimatePresence>
     <AnimatePresence>
       {priorityModalOpen && (

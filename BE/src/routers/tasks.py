@@ -488,6 +488,8 @@ async def update_task(
     completion_changed = False
     if "is_completed" in sent and body.is_completed != task.is_completed:
         today = config.today()
+        if task.due_date < today:
+            raise HTTPException(400, "Không thể thay đổi trạng thái hoàn thành của công việc trong quá khứ")
         if task.habit_id is not None and body.is_completed and task.due_date > today:
             raise HTTPException(400, "Chưa thể hoàn thành thói quen của ngày tương lai")
         task.is_completed = body.is_completed

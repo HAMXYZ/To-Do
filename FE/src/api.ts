@@ -27,10 +27,14 @@ const API_URL: string = (
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  code?: string
+  retryAfter?: number
+  constructor(status: number, message: string, code?: string, retryAfter?: number) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
+    this.retryAfter = retryAfter
   }
 }
 
@@ -99,6 +103,11 @@ function messageFrom(body: unknown, status: number): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const d = (body as { detail: unknown }).detail
     if (typeof d === 'string') return d
+    if (typeof d === 'object' && d !== null) {
+      if ('message' in d && typeof (d as { message: unknown }).message === 'string') {
+        return (d as { message: string }).message
+      }
+    }
     if (Array.isArray(d)) {
       const msg = d
         .map((e) => {
@@ -155,7 +164,25 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
       await logout()
       onUnauthorized?.()
     }
-    throw new ApiError(res.status, messageFrom(data, res.status))
+    let code: string | undefined
+    let retryAfter: number | undefined
+    if (data && typeof data === 'object' && 'detail' in data) {
+      const d = (data as { detail: unknown }).detail
+      if (typeof d === 'object' && d !== null) {
+        if ('code' in d && typeof (d as { code: unknown }).code === 'string') {
+          code = (d as { code: string }).code
+        }
+        if ('retry_after' in d && typeof (d as { retry_after: unknown }).retry_after === 'number') {
+          retryAfter = (d as { retry_after: number }).retry_after
+        }
+      }
+    }
+    const headerRetry = res.headers.get('Retry-After')
+    if (headerRetry && retryAfter === undefined) {
+      const parsed = parseInt(headerRetry, 10)
+      if (!Number.isNaN(parsed)) retryAfter = parsed
+    }
+    throw new ApiError(res.status, messageFrom(data, res.status), code, retryAfter)
   }
   return data as T
 }
@@ -808,6 +835,99 @@ export async function createHabit(h: HabitInput): Promise<Habit> {
       },
     }),
   )
+}
+
+export interface AiQuotaInfo {
+  limit: number
+  used: number
+  remaining: number
+  resetInSeconds: number
+  windowSeconds: number
+  provider: string
+}
+
+/** US-38: Lấy thông tin hạn mức sử dụng AI hiện tại */
+export async function getAiQuota(): Promise<AiQuotaInfo> {
+  const r = await request<{
+    limit: number
+    used: number
+    remaining: number
+    reset_in_seconds: number
+    window_seconds: number
+    provider: string
+  }>('GET', '/ai/quota')
+  return {
+    limit: r.limit,
+    used: r.used,
+    remaining: r.remaining,
+    resetInSeconds: r.reset_in_seconds,
+    windowSeconds: r.window_seconds,
+    provider: r.provider,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// US-33: AI Assistant (Hỏi đáp và nhập liệu bằng giọng nói / văn bản)
+// ---------------------------------------------------------------------------
+
+export interface AssistantActionTask {
+  title: string
+  day?: number | null
+  time?: string | null
+  isStarred?: boolean
+  priority?: 'low' | 'medium' | 'high'
+}
+
+export interface AssistantAction {
+  type: 'create_task' | 'none'
+  task?: AssistantActionTask | null
+}
+
+export interface AIAssistantResponse {
+  reply: string
+  action?: AssistantAction | null
+  provider: string
+}
+
+export async function askAssistant(
+  message: string,
+  context?: { currentDay?: number; todayDate?: string },
+): Promise<AIAssistantResponse> {
+  const r = await request<{
+    reply: string
+    action?: {
+      type: 'create_task' | 'none'
+      task?: {
+        title: string
+        day?: number | null
+        time?: string | null
+        is_starred?: boolean
+        priority?: 'low' | 'medium' | 'high'
+      } | null
+    } | null
+    provider: string
+  }>('POST', '/ai/assistant', {
+    body: {
+      message,
+      current_day: context?.currentDay,
+      today_date: context?.todayDate,
+    },
+  })
+
+  return {
+    reply: r.reply,
+    provider: r.provider,
+    action: r.action ? {
+      type: r.action.type,
+      task: r.action.task ? {
+        title: r.action.task.title,
+        day: r.action.task.day,
+        time: r.action.task.time,
+        isStarred: r.action.task.is_starred,
+        priority: r.action.task.priority,
+      } : null,
+    } : null,
+  }
 }
 
 export interface HabitRecognitionSuggestion {
