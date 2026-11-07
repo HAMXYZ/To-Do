@@ -25,7 +25,7 @@ export default function AIHabitRecognitionModal({ onClose, onCreate }: Props) {
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
 
-  // US-38: Tải thông tin hạn mức AI khi mở modal
+  // Tải thông tin hạn mức AI khi mở modal
   useEffect(() => {
     api
       .getAiQuota()
@@ -33,7 +33,7 @@ export default function AIHabitRecognitionModal({ onClose, onCreate }: Props) {
       .catch(() => {})
   }, [])
 
-  // US-38: Đếm ngược thời gian chờ khi đạt giới hạn yêu cầu (Rate Limit / Quota)
+  // Đếm ngược thời gian chờ khi đạt giới hạn yêu cầu (Rate Limit / Quota)
   useEffect(() => {
     if (retryCountdown === null || retryCountdown <= 0) return
     const timer = setInterval(() => {
@@ -63,7 +63,7 @@ export default function AIHabitRecognitionModal({ onClose, onCreate }: Props) {
         .then(setQuota)
         .catch(() => {})
 
-      // US-37: Kiểm tra cấu trúc kết quả AI (Schema Validation)
+      // Kiểm tra cấu trúc kết quả AI (Schema Validation)
       if (!result || !Array.isArray(result.suggestions)) {
         throw new Error(
           "Dữ liệu AI trả về sai định dạng danh sách gợi ý. Kết quả đã bị từ chối.",
@@ -96,7 +96,7 @@ export default function AIHabitRecognitionModal({ onClose, onCreate }: Props) {
             "⏱️ Quá thời gian chờ phản hồi từ AI (Timeout). Kế hoạch của bạn không bị ảnh hưởng.",
           )
         } else if (cause.status === 429) {
-          // US-38 & US-38.EX1: Cảnh báo giới hạn lượt sử dụng AI, giữ nguyên dữ liệu nhập chưa lưu
+          // Cảnh báo giới hạn lượt sử dụng AI, giữ nguyên dữ liệu nhập chưa lưu
           const waitTime =
             cause.retryAfter && cause.retryAfter > 0 ? cause.retryAfter : 60
           setRetryCountdown(waitTime)
@@ -107,7 +107,7 @@ export default function AIHabitRecognitionModal({ onClose, onCreate }: Props) {
           } else {
             setError(
               cause.message ||
-                "⚠️ Bạn đã đạt giới hạn 10 yêu cầu AI trong 10 phút (US-38).",
+                "⚠️ Bạn đã đạt giới hạn 10 yêu cầu AI trong 10 phút.",
             )
           }
           // Refresh quota view
@@ -218,7 +218,7 @@ export default function AIHabitRecognitionModal({ onClose, onCreate }: Props) {
                       ? "bg-amber-100 text-amber-800 border border-amber-300"
                       : "bg-emerald-100 text-emerald-800 border border-emerald-300"
                 }`}
-                title={`Hạn mức AI (US-38): ${quota.remaining}/${quota.limit} lượt khả dụng trong 10 phút`}
+                title={`Hạn mức AI: ${quota.remaining}/${quota.limit} lượt khả dụng trong 10 phút`}
               >
                 ⚡ AI: {quota.remaining}/{quota.limit} lượt
               </span>
@@ -294,11 +294,11 @@ export default function AIHabitRecognitionModal({ onClose, onCreate }: Props) {
                 <span className="text-base leading-none">⚠️</span>
                 <div className="flex-1">
                   <p className="font-bold">
-                    Cảnh báo giới hạn lượt sử dụng AI (US-38)
+                    Cảnh báo giới hạn lượt sử dụng AI
                   </p>
                   <p className="mt-1 leading-relaxed text-rose-700">{error}</p>
                   <p className="mt-1.5 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
-                    🛡️ <strong>Bảo toàn dữ liệu (EX1):</strong> Văn bản mô tả
+                    🛡️ <strong>Bảo toàn dữ liệu:</strong> Văn bản mô tả
                     thói quen của bạn được giữ nguyên vẹn ở khung nhập phía
                     trên, không bị xóa mất.
                   </p>

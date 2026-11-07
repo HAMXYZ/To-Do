@@ -41,7 +41,7 @@ export default function WeeklyReviewModal({ week, onClose }: Props) {
         if (active) setLoading(false)
       })
 
-    // US-38: Tải hạn mức AI khi mở modal
+    // Tải hạn mức AI khi mở modal
     api
       .getAiQuota()
       .then((q) => {
@@ -54,7 +54,7 @@ export default function WeeklyReviewModal({ week, onClose }: Props) {
     }
   }, [week])
 
-  // US-38: Đếm ngược thời gian chờ khi đạt giới hạn yêu cầu (Rate Limit / Quota)
+  // Đếm ngược thời gian chờ khi đạt giới hạn yêu cầu (Rate Limit / Quota)
   useEffect(() => {
     if (retryCountdown === null || retryCountdown <= 0) return
     const timer = setInterval(() => {
@@ -69,7 +69,7 @@ export default function WeeklyReviewModal({ week, onClose }: Props) {
     return () => clearInterval(timer)
   }, [retryCountdown])
 
-  // US-36 & US-37 & US-38: Xử lý Loading, Timeout, Retry, Schema Validation và Rate Limit
+  // Xử lý Loading, Timeout, Retry, Schema Validation và Rate Limit
   async function generate() {
     if (retryCountdown !== null && retryCountdown > 0) return
     setGenerating(true)
@@ -85,7 +85,7 @@ export default function WeeklyReviewModal({ week, onClose }: Props) {
         .then(setQuota)
         .catch(() => {})
 
-      // US-37: Xác thực schema cấu trúc dữ liệu AI trước khi sử dụng
+      // Xác thực schema cấu trúc dữ liệu AI trước khi sử dụng
       if (
         !result ||
         typeof result.summaryText !== "string" ||
@@ -109,7 +109,7 @@ export default function WeeklyReviewModal({ week, onClose }: Props) {
             "⏱️ Quá thời gian chờ phản hồi từ AI (Timeout). Kế hoạch của bạn không bị ảnh hưởng.",
           )
         } else if (cause.status === 429) {
-          // US-38 & US-38.EX1: Cảnh báo giới hạn lượt sử dụng AI, giữ nguyên dữ liệu nháp chưa lưu
+          // Cảnh báo giới hạn lượt sử dụng AI, giữ nguyên dữ liệu nháp chưa lưu
           const waitTime =
             cause.retryAfter && cause.retryAfter > 0 ? cause.retryAfter : 60
           setRetryCountdown(waitTime)
@@ -217,7 +217,7 @@ export default function WeeklyReviewModal({ week, onClose }: Props) {
                       ? "bg-amber-100 text-amber-800 border border-amber-300"
                       : "bg-emerald-100 text-emerald-800 border border-emerald-300"
                 }`}
-                title={`Hạn mức AI (US-38): ${quota.remaining}/${quota.limit} lượt khả dụng trong 10 phút`}
+                title={`Hạn mức AI: ${quota.remaining}/${quota.limit} lượt khả dụng trong 10 phút`}
               >
                 ⚡ AI: {quota.remaining}/{quota.limit} lượt
               </span>
@@ -276,7 +276,7 @@ export default function WeeklyReviewModal({ week, onClose }: Props) {
             </div>
           ) : null}
 
-          {/* US-36: Loading state khi AI đang xử lý */}
+          {/* Loading state khi AI đang xử lý */}
           {generating && (
             <div className="my-5 flex flex-col items-center justify-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50/60 p-5">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
@@ -305,7 +305,7 @@ export default function WeeklyReviewModal({ week, onClose }: Props) {
             giá. Không gửi thông tin nhạy cảm.
           </p>
 
-          {/* US-36 & US-38: Hiển thị lỗi, Timeout, Quota Warning và nút Thử lại (Retry) */}
+          {/* Hiển thị lỗi, Timeout, Quota Warning và nút Thử lại (Retry) */}
           {error && (
             <div
               role="alert"
@@ -314,10 +314,10 @@ export default function WeeklyReviewModal({ week, onClose }: Props) {
               <div className="flex items-start gap-2">
                 <span className="text-base leading-none">⚠️</span>
                 <div className="flex-1">
-                  <p className="font-bold">Cảnh báo yêu cầu AI (US-38)</p>
+                  <p className="font-bold">Cảnh báo yêu cầu AI</p>
                   <p className="mt-1 leading-relaxed text-rose-700">{error}</p>
                   <p className="mt-1.5 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
-                    🛡️ <strong>Bảo toàn dữ liệu (EX1):</strong> Toàn bộ nội dung
+                    🛡️ <strong>Bảo toàn dữ liệu:</strong> Toàn bộ nội dung
                     báo cáo bạn đang viết được bảo toàn nguyên vẹn. Bạn vẫn có
                     thể tiếp tục chỉnh sửa và bấm <strong>"Lưu báo cáo"</strong>{" "}
                     thủ công độc lập với AI.

@@ -46,7 +46,7 @@ class AIQuotaOut(BaseModel):
 
 @router.get("/quota", response_model=AIQuotaOut)
 def get_ai_quota_status(user: User = Depends(get_current_user)):
-    """Kiểm tra hạn mức gọi AI của người dùng (US-38)."""
+    """Kiểm tra hạn mức gọi AI của người dùng."""
     return get_ai_quota(user.id)
 
 
@@ -144,7 +144,7 @@ async def recognize_habits(
         raise HTTPException(502, "AI trả về gợi ý habit không hợp lệ. Hãy thử lại.") from exc
 
 
-# ---------- US-33: AI Assistant (Hỏi đáp và nhập liệu bằng giọng nói / văn bản) ----------
+# ---------- AI Assistant (Hỏi đáp và nhập liệu bằng giọng nói / văn bản) ----------
 
 class AssistantActionTask(BaseModel):
     title: str = Field(min_length=1, max_length=200)
@@ -320,7 +320,7 @@ async def ask_ai_assistant(
 
 
 # ===========================================================================
-# US-29, US-30, US-31: AI Breakdown & Priority Suggestions
+# AI Breakdown & Priority Suggestions
 # ===========================================================================
 
 PROMPT_MAX: int = getattr(limits, "PROMPT_MAX", 500)

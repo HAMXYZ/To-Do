@@ -1,5 +1,5 @@
 /**
- * Quản lý thông báo và âm báo cho US-27, US-28 (Web & Electron)
+ * Quản lý thông báo và âm báo (Web & Electron)
  */
 
 export function playNotificationChime(): void {

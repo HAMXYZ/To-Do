@@ -25,7 +25,7 @@ async def update_profile(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Cập nhật tên hiển thị hồ sơ cá nhân (US-05)."""
+    """Cập nhật tên hiển thị hồ sơ cá nhân."""
     user.full_name = body.full_name
     await session.commit()
     await session.refresh(user)
@@ -37,7 +37,7 @@ async def delete_account(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Xóa vĩnh viễn tài khoản và toàn bộ dữ liệu cá nhân liên quan (US-06)."""
+    """Xóa vĩnh viễn tài khoản và toàn bộ dữ liệu cá nhân liên quan."""
     # 1. Xóa các log thói quen (habit_logs)
     user_habit_ids = select(Habit.id).where(Habit.user_id == user.id)
     await session.execute(delete(HabitLog).where(HabitLog.habit_id.in_(user_habit_ids)))

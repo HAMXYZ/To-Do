@@ -112,7 +112,7 @@ export default function App({ onSignedOut }: {
     deletedTasks,
   } = data
 
-  // US-27 & US-28: Lắng nghe nhắc việc và tổng kết ngày (click thông báo mở tuần hiện tại)
+  // Lắng nghe nhắc việc và tổng kết ngày (click thông báo mở tuần hiện tại)
   useReminderNotifications({
     enabled: true,
     playSound: true,

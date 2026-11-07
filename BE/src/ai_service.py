@@ -36,7 +36,7 @@ _MAX_RESPONSE_BYTES = 256 * 1024
 
 
 def get_ai_quota(user_id: int) -> dict:
-    """Lấy thông tin hạn mức sử dụng AI hiện tại của người dùng (US-38)."""
+    """Lấy thông tin hạn mức sử dụng AI hiện tại của người dùng."""
     now = time.monotonic()
     with _usage_lock:
         calls = _usage[user_id]

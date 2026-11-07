@@ -323,7 +323,7 @@ async def bulk_create(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """US-30: Lưu hàng loạt các bước phân rã đã được người dùng chỉnh sửa và xác nhận.
+    """Lưu hàng loạt các bước phân rã đã được người dùng chỉnh sửa và xác nhận.
     Đánh dấu is_ai_generated=True, quy đổi day (0..6) theo tuần ISO đang xem, hỗ trợ is_starred và steps.
     """
     try:

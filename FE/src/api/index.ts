@@ -346,7 +346,7 @@ export async function getMe(): Promise<UserInfo> {
   return toUser(await request<BeUser>("GET", "/auth/me"))
 }
 
-/** US-05: Cập nhật tên hiển thị hồ sơ cá nhân */
+/** Cập nhật tên hiển thị hồ sơ cá nhân */
 export async function updateProfile(
   fullName: string | null,
 ): Promise<UserInfo> {
@@ -356,7 +356,7 @@ export async function updateProfile(
   return toUser(u)
 }
 
-/** US-06: Xóa vĩnh viễn tài khoản và toàn bộ dữ liệu */
+/** Xóa vĩnh viễn tài khoản và toàn bộ dữ liệu */
 export async function deleteAccount(): Promise<void> {
   await request<void>("DELETE", "/me")
   await logout()
@@ -766,7 +766,7 @@ export async function carryOver(): Promise<{
   return { count: r.count, tasks: r.tasks.map(toPlaced) }
 }
 
-/** US-30: Lưu danh sách bước đề xuất đã được người dùng chỉnh sửa và xác nhận (week = tuần đang xem). */
+/** Lưu danh sách bước đề xuất đã được người dùng chỉnh sửa và xác nhận (week = tuần đang xem). */
 export async function saveBreakdown(
   week: number,
   items: BreakdownItem[],
@@ -789,7 +789,7 @@ export async function saveBreakdown(
 }
 
 // ---------------------------------------------------------------------------
-// AI Breakdown & Priority Suggestions (US-29, US-30, US-31)
+// AI Breakdown & Priority Suggestions
 // ---------------------------------------------------------------------------
 
 export interface BreakdownPreviewInput {
@@ -825,7 +825,7 @@ interface BeBreakdownResponse {
   items: BeBreakdownStep[]
 }
 
-/** US-29: Gọi BE sinh kế hoạch phân rã mẫu (Prototype). */
+/** Gọi BE sinh kế hoạch phân rã mẫu (Prototype). */
 export async function previewBreakdown(
   input: BreakdownPreviewInput,
 ): Promise<BreakdownPreviewResult> {
@@ -875,7 +875,7 @@ interface BePrioritySuggestionResponse {
   suggestions: BePrioritySuggestionItem[]
 }
 
-/** US-31: Lấy gợi ý ưu tiên (⭐) từ BE cho tuần đang xem. */
+/** Lấy gợi ý ưu tiên (⭐) từ BE cho tuần đang xem. */
 export async function getPrioritySuggestions(
   week: number,
   day?: number,
@@ -910,7 +910,7 @@ export async function getPrioritySuggestions(
   }
 }
 
-/** US-31: Xác nhận áp dụng đánh dấu sao (⭐) cho các task được chọn. */
+/** Xác nhận áp dụng đánh dấu sao (⭐) cho các task được chọn. */
 export async function confirmPrioritySuggestions(
   taskIds: number[],
   isStarred = true,
@@ -958,7 +958,7 @@ export interface AiQuotaInfo {
   provider: string
 }
 
-/** US-38: Lấy thông tin hạn mức sử dụng AI hiện tại */
+/** Lấy thông tin hạn mức sử dụng AI hiện tại */
 export async function getAiQuota(): Promise<AiQuotaInfo> {
   const r = await request<{
     limit: number

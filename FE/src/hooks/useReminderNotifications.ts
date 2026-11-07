@@ -55,7 +55,7 @@ export function useReminderNotifications({
         const currentTimeStr = `${currentHours}:${currentMinutes}`
         const todayStr = data.today
 
-        // Lấy danh sách ID đã nhắc hôm nay từ sessionStorage để tránh gửi trùng (EX1)
+        // Lấy danh sách ID đã nhắc hôm nay từ sessionStorage để tránh gửi trùng
         let notifiedSet: Set<string>
         try {
           const raw = sessionStorage.getItem(STORAGE_KEY_NOTIFIED)
@@ -64,7 +64,7 @@ export function useReminderNotifications({
           notifiedSet = new Set()
         }
 
-        // --- A. Nhắc nhở công việc sắp tới hạn (US-27, US-28) ---
+        // --- A. Nhắc nhở công việc sắp tới hạn ---
         if (
           data.reminderLeadMinutes !== null &&
           data.upcoming &&
@@ -102,7 +102,7 @@ export function useReminderNotifications({
           }
         }
 
-        // --- B. Tổng kết cuối ngày (US-28) ---
+        // --- B. Tổng kết cuối ngày ---
         const lastSummaryDate = sessionStorage.getItem(STORAGE_KEY_SUMMARY_DATE)
         if (data.reminderTime && lastSummaryDate !== todayStr) {
           // So sánh giờ hiện tại với reminderTime (hoặc trong vòng 10 phút sau giờ đó)
@@ -137,7 +137,7 @@ export function useReminderNotifications({
         }
       } catch (err) {
         if (err instanceof api.ApiError && err.status === 401) {
-          // Token hết hạn -> gọi callback đăng xuất chuyển về Login (EX1)
+          // Token hết hạn -> gọi callback đăng xuất chuyển về Login
           onSignedOutRef.current?.("expired")
         }
       }

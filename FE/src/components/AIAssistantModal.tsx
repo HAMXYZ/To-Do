@@ -55,7 +55,7 @@ export default function AIAssistantModal({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
 
-  // Tải thông tin quota (US-38)
+  // Tải thông tin quota
   useEffect(() => {
     api
       .getAiQuota()
@@ -76,7 +76,7 @@ export default function AIAssistantModal({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, loading])
 
-  // Đếm ngược Rate Limit (US-38)
+  // Đếm ngược Rate Limit
   useEffect(() => {
     if (retryCountdown === null || retryCountdown <= 0) return
     const timer = setInterval(() => {
@@ -91,7 +91,7 @@ export default function AIAssistantModal({
     return () => clearInterval(timer)
   }, [retryCountdown])
 
-  // Khởi động / Dừng nhận diện giọng nói (US-33 & US-33.EX1)
+  // Khởi động / Dừng nhận diện giọng nói
   function toggleListening() {
     setMicError("")
     setError("")
@@ -135,7 +135,7 @@ export default function AIAssistantModal({
         }
       }
 
-      // Xử lý ngoại lệ theo US-33.EX1 (Quyền micro, lỗi kết nối)
+      // Xử lý ngoại lệ (Quyền micro, lỗi kết nối)
       recognition.onerror = (event: any) => {
         setIsListening(false)
         if (
@@ -237,7 +237,7 @@ export default function AIAssistantModal({
             )
           } else {
             setError(
-              "⚠️ Bạn đã đạt giới hạn 10 yêu cầu AI trong 10 phút (US-38).",
+              "⚠️ Bạn đã đạt giới hạn 10 yêu cầu AI trong 10 phút.",
             )
           }
           api
@@ -262,7 +262,7 @@ export default function AIAssistantModal({
             : "Có lỗi khi kết nối với Trợ lý AI.",
         )
       }
-      // Giữ lại text cho người dùng nếu lỗi (EX1)
+      // Giữ lại text cho người dùng nếu lỗi
       setInput(textToSend)
     } finally {
       setLoading(false)
@@ -336,14 +336,14 @@ export default function AIAssistantModal({
           </div>
         </header>
 
-        {/* Thông báo quyền micro (US-33.EX1) */}
+        {/* Thông báo quyền micro */}
         {micError && (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">
             <p className="font-medium">{micError}</p>
           </div>
         )}
 
-        {/* Lỗi Rate limit / AI (US-38) */}
+        {/* Lỗi Rate limit / AI */}
         {error && (
           <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-800">
             <p className="font-semibold">{error}</p>
@@ -503,7 +503,7 @@ export default function AIAssistantModal({
             }}
             className="flex items-center gap-2"
           >
-            {/* Nút Micro (Speech-to-Text - US-33) */}
+            {/* Nút Micro (Speech-to-Text) */}
             <button
               type="button"
               onClick={toggleListening}
@@ -559,7 +559,7 @@ export default function AIAssistantModal({
             </button>
           </form>
 
-          {/* Ghi chú minh bạch theo US-33.EX1 */}
+          {/* Ghi chú minh bạch */}
           <p className="mt-2 text-center text-[10px] text-slate-400">
             Micro chuyển giọng nói thành văn bản trên máy. Trợ lý AI phân tích
             để trả lời và đề xuất việc.

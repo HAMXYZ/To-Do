@@ -453,7 +453,7 @@ export function useAppData(
     [run, loadWeek, refreshOverdue, remember],
   )
 
-  /** US-31: Áp dụng đánh dấu sao (⭐) hàng loạt sau khi người dùng xác nhận gợi ý ưu tiên. */
+  /** Áp dụng đánh dấu sao (⭐) hàng loạt sau khi người dùng xác nhận gợi ý ưu tiên. */
   const applyPriorityStars = useCallback(
     (taskIds: number[]): Promise<boolean> =>
       run(async () => {

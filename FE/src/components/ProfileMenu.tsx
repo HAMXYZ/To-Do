@@ -47,7 +47,7 @@ export function ProfileMenu({
   const [message, setMessage] = useState("")
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // Cấu hình thông báo & nhắc nhở (US-27, US-28)
+  // Cấu hình thông báo & nhắc nhở
   const [reminderLeadMinutes, setReminderLeadMinutes] = useState<number | null>(
     15,
   )
@@ -58,7 +58,7 @@ export function ProfileMenu({
   const [notifPermission, setNotifPermission] =
     useState<NotificationPermission | "unsupported">("default")
 
-  // Hồ sơ cá nhân (US-05) & Xóa tài khoản (US-06)
+  // Hồ sơ cá nhân & Xóa tài khoản
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileNotice, setProfileNotice] = useState("")
   const [profileError, setProfileError] = useState("")
@@ -364,7 +364,7 @@ export function ProfileMenu({
                       </p>
                     )}
 
-                    {/* US-06: Vùng nguy hiểm - Xóa tài khoản */}
+                    {/* Vùng nguy hiểm - Xóa tài khoản */}
                     <div className="mt-3 border-t border-rose-100 pt-2.5">
                       <span className="block text-[10px] font-bold uppercase tracking-wider text-rose-600">
                         Vùng nguy hiểm
@@ -387,7 +387,7 @@ export function ProfileMenu({
                   </div>
                 )}
 
-                {/* US-27 & US-28: Notification Preferences */}
+                {/* Notification Preferences */}
                 {section === "notifications" && (
                   <div className="space-y-3">
                     <div>
