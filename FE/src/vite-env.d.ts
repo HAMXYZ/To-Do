@@ -5,7 +5,11 @@ interface Window {
   webkitSpeechRecognition?: any
   electronAPI?: {
     isElectron: boolean
-    sendNotification: (payload: { title: string; body: string; sound?: boolean }) => void
+    sendNotification: (payload: {
+      title: string
+      body: string
+      sound?: boolean
+    }) => void
     onNavigateCurrentWeek: (callback: () => void) => () => void
     isNotificationSupported?: () => boolean
   }

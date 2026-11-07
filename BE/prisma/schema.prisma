@@ -1,0 +1,100 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           Int            @id @default(autoincrement())
+  email        String         @unique
+  name         String?
+  passwordHash String         @map("password_hash")
+  isActive     Boolean        @default(true) @map("is_active")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  tasks        Task[]
+  habits       Habit[]
+  categories   Category[]
+  reviews      WeeklyReview[]
+
+  @@map("users")
+}
+
+model Category {
+  id     Int    @id @default(autoincrement())
+  userId Int    @map("user_id")
+  name   String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks  Task[]
+
+  @@unique([userId, name])
+  @@map("categories")
+}
+
+model Task {
+  id               Int       @id @default(autoincrement())
+  userId           Int       @map("user_id")
+  title            String
+  description      String?
+  time             String
+  deadlineAt       DateTime? @map("deadline_at")
+  estimatedMinutes Int?      @map("estimated_minutes")
+  priority         String?   @default("medium")
+  categoryId       Int?      @map("category_id")
+  done             Boolean   @default(false)
+  ai               Boolean   @default(false)
+  starred          Boolean   @default(false)
+  completedAt      DateTime? @map("completed_at")
+  deletedAt        DateTime? @map("deleted_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([userId, done])
+  @@map("tasks")
+}
+
+model Habit {
+  id        Int        @id @default(autoincrement())
+  userId    Int        @map("user_id")
+  title     String
+  frequency String     @default("everyday")
+  days      Int[]
+  time      String
+  autoTask  Boolean    @default(false) @map("auto_task")
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now()) @map("created_at")
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs      HabitLog[]
+
+  @@map("habits")
+}
+
+model HabitLog {
+  id        Int      @id @default(autoincrement())
+  habitId   Int      @map("habit_id")
+  userId    Int      @map("user_id")
+  date      DateTime @db.Date
+  done      Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  habit     Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@unique([habitId, date])
+  @@map("habit_logs")
+}
+
+model WeeklyReview {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  weekStart DateTime @map("week_start") @db.Date
+  content   String
+  score     Int?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@map("weekly_reviews")
+}

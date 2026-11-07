@@ -1,40 +1,40 @@
-import React, { useState } from 'react'
-import * as api from '../api'
-import Icon from '../components/Icon'
+import React, { useState } from "react"
+import * as api from "../api"
+import Icon from "../components/Icon"
 
 const inputClass =
-  'mt-1.5 w-full rounded-[10px] border border-[#e2e8f0] bg-white px-3 py-2.5 text-[13px] text-[#334e3c] outline-none placeholder:text-[#a2afa5] focus:border-[#62d786] focus:ring-2 focus:ring-[#4ade80]/15'
+  "mt-1.5 w-full rounded-[10px] border border-[#e2e8f0] bg-white px-3 py-2.5 text-[13px] text-[#334e3c] outline-none placeholder:text-[#a2afa5] focus:border-[#62d786] focus:ring-2 focus:ring-[#4ade80]/15"
 
 export default function Login({
-  initialEmail = '',
-  notice = '',
+  initialEmail = "",
+  notice = "",
   onLoggedIn,
   onGoRegister,
+  /** thông báo hiện phía trên form (ví dụ: đăng ký thành công, phiên hết hạn) */
 }: {
   initialEmail?: string
-  /** thông báo hiện phía trên form (ví dụ: đăng ký thành công, phiên hết hạn) */
   notice?: string
   onLoggedIn: () => void
   onGoRegister: () => void
 }) {
   const [email, setEmail] = useState(initialEmail)
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     if (!email.trim() || !password) {
-      setError('Vui lòng nhập email và mật khẩu!')
+      setError("Vui lòng nhập email và mật khẩu!")
       return
     }
-    setError('')
+    setError("")
     setBusy(true)
     try {
       await api.login(email.trim().toLowerCase(), password)
       onLoggedIn()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Đăng nhập thất bại')
+      setError(err instanceof Error ? err.message : "Đăng nhập thất bại")
       setBusy(false)
     }
   }
@@ -50,16 +50,26 @@ export default function Login({
             FocusFlow <span className="text-[#31b963]">AI</span>
           </span>
         </div>
-        <h1 className="text-[22px] font-bold tracking-[-0.04em] text-[#1d3025]">Đăng Nhập</h1>
-        <p className="mt-1 text-[12px] text-[#839087]">Chào mừng bạn quay lại.</p>
+        <h1 className="text-[22px] font-bold tracking-[-0.04em] text-[#1d3025]">
+          Đăng Nhập
+        </h1>
+        <p className="mt-1 text-[12px] text-[#839087]">
+          Chào mừng bạn quay lại.
+        </p>
 
         {notice && (
-          <p role="status" className="mt-4 rounded-[10px] bg-[#effbf2] px-3 py-2.5 text-[12px] font-medium text-[#2f7d4f]">
+          <p
+            role="status"
+            className="mt-4 rounded-[10px] bg-[#effbf2] px-3 py-2.5 text-[12px] font-medium text-[#2f7d4f]"
+          >
             {notice}
           </p>
         )}
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] bg-[#fff1f0] px-3 py-2.5 text-[12px] font-medium text-[#c0443f]">
+          <p
+            role="alert"
+            className="mt-4 rounded-[10px] bg-[#fff1f0] px-3 py-2.5 text-[12px] font-medium text-[#c0443f]"
+          >
             {error}
           </p>
         )}
@@ -92,13 +102,17 @@ export default function Login({
             disabled={busy}
             className="h-11 w-full rounded-[10px] bg-[#4ade80] text-[13px] font-bold text-[#14492b] transition hover:bg-[#36d871] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {busy ? 'Đang đăng nhập…' : 'Đăng Nhập'}
+            {busy ? "Đang đăng nhập…" : "Đăng Nhập"}
           </button>
         </form>
 
         <p className="mt-5 text-center text-[12px] text-[#839087]">
-          Chưa có tài khoản?{' '}
-          <button type="button" onClick={onGoRegister} className="font-bold text-[#2f9a58] hover:underline">
+          Chưa có tài khoản?{" "}
+          <button
+            type="button"
+            onClick={onGoRegister}
+            className="font-bold text-[#2f9a58] hover:underline"
+          >
             Đăng ký
           </button>
         </p>

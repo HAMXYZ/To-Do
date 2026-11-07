@@ -144,3 +144,100 @@ def test_ai_assistant_rate_limit_429():
         assert err.headers["Retry-After"] == "120"
         assert err.headers["X-RateLimit-Remaining"] == "0"
 
+
+def test_ai_assistant_prevents_past_date_and_handles_next_week():
+    # Giả sử hôm nay là Thứ Bảy 2026-11-07 (day index 5)
+    # LLM trả về Thứ Ba của tuần này (2026-11-03 - trong quá khứ)
+    fake_result = {
+        "reply": "Mình đã thêm việc 'Mua quần áo' vào Thứ Ba tuần sau cho bạn rồi nhé!",
+        "action": {
+            "type": "create_task",
+            "task": {
+                "title": "Mua quần áo",
+                "day": 1,
+                "date": "2026-11-03",
+                "time": None,
+                "is_starred": False,
+                "priority": "medium",
+            },
+        },
+    }
+    fake_quota = {"limit": 10, "used": 1, "remaining": 9, "reset_in_seconds": 600}
+
+    user = MagicMock()
+    user.id = 104
+
+    body = AIAssistantIn(
+        message="thêm cho tôi công việc mua quần áo vào thứ 3 tuần sau",
+        today_date="2026-11-07",
+    )
+    response = Response()
+
+    with patch("src.routers.ai.generate_json") as mock_gen:
+        async def mock_call(*args, **kwargs):
+            return fake_result, "google_ai", fake_quota
+
+        mock_gen.side_effect = mock_call
+
+        coro = ask_ai_assistant(body, response, user=user, session=None)
+        try:
+            coro.send(None)
+        except StopIteration as e:
+            res = e.value
+
+        assert isinstance(res, AIAssistantOut)
+        assert res.action is not None
+        assert res.action.task is not None
+        # Backend safety guard phải tịnh tiến sang Thứ Ba tuần sau (2026-11-10)
+        assert res.action.task.date == "2026-11-10"
+        assert res.action.task.day == 1
+        assert res.action.task.date >= "2026-11-07"
+
+
+def test_ai_assistant_auto_computes_date_for_passed_day_in_week():
+    # Hôm nay là Thứ Bảy 2026-11-07, người dùng nói "thứ 3 đi bơi"
+    # LLM chỉ trả về day: 1, không có date
+    fake_result = {
+        "reply": "Mình đã lên lịch đi bơi vào Thứ Ba cho bạn!",
+        "action": {
+            "type": "create_task",
+            "task": {
+                "title": "Đi bơi",
+                "day": 1,
+                "time": None,
+                "is_starred": False,
+                "priority": "medium",
+            },
+        },
+    }
+    fake_quota = {"limit": 10, "used": 1, "remaining": 9, "reset_in_seconds": 600}
+
+    user = MagicMock()
+    user.id = 105
+
+    body = AIAssistantIn(
+        message="thứ 3 đi bơi",
+        today_date="2026-11-07",
+    )
+    response = Response()
+
+    with patch("src.routers.ai.generate_json") as mock_gen:
+        async def mock_call(*args, **kwargs):
+            return fake_result, "google_ai", fake_quota
+
+        mock_gen.side_effect = mock_call
+
+        coro = ask_ai_assistant(body, response, user=user, session=None)
+        try:
+            coro.send(None)
+        except StopIteration as e:
+            res = e.value
+
+        assert isinstance(res, AIAssistantOut)
+        assert res.action is not None
+        assert res.action.task is not None
+        # Vì Thứ Ba tuần này đã qua so với Thứ Bảy 07/11, phải tự chọn Thứ Ba tuần tới (2026-11-10)
+        assert res.action.task.date == "2026-11-10"
+        assert res.action.task.day == 1
+
+

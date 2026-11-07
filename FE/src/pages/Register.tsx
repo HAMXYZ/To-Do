@@ -1,31 +1,31 @@
-import React, { useState } from 'react'
-import * as api from '../api'
-import Icon from '../components/Icon'
+import React, { useState } from "react"
+import * as api from "../api"
+import Icon from "../components/Icon"
 
 const inputClass =
-  'mt-1.5 w-full rounded-[10px] border border-[#e2e8f0] bg-white px-3 py-2.5 text-[13px] text-[#334e3c] outline-none placeholder:text-[#a2afa5] focus:border-[#62d786] focus:ring-2 focus:ring-[#4ade80]/15'
+  "mt-1.5 w-full rounded-[10px] border border-[#e2e8f0] bg-white px-3 py-2.5 text-[13px] text-[#334e3c] outline-none placeholder:text-[#a2afa5] focus:border-[#62d786] focus:ring-2 focus:ring-[#4ade80]/15"
 
 const PASSWORD_MIN = 8
 
 export default function Register({
   onRegistered,
   onGoLogin,
-}: {
   /** gọi sau khi đăng ký thành công (BE không trả token, người dùng phải đăng nhập) */
+}: {
   onRegistered: (email: string) => void
   onGoLogin: () => void
 }) {
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [error, setError] = useState('')
+  const [fullName, setFullName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     if (!email.trim() || !password || !confirmPassword) {
-      setError('Vui lòng điền đầy đủ thông tin!')
+      setError("Vui lòng điền đầy đủ thông tin!")
       return
     }
     if (password.length < PASSWORD_MIN) {
@@ -33,16 +33,20 @@ export default function Register({
       return
     }
     if (password !== confirmPassword) {
-      setError('Mật khẩu xác nhận không khớp!')
+      setError("Mật khẩu xác nhận không khớp!")
       return
     }
-    setError('')
+    setError("")
     setBusy(true)
     try {
-      const user = await api.register({ email: email.trim().toLowerCase(), password, fullName: fullName.trim() || undefined })
+      const user = await api.register({
+        email: email.trim().toLowerCase(),
+        password,
+        fullName: fullName.trim() || undefined,
+      })
       onRegistered(user.email)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Đăng ký thất bại')
+      setError(err instanceof Error ? err.message : "Đăng ký thất bại")
       setBusy(false)
     }
   }
@@ -58,18 +62,26 @@ export default function Register({
             FocusFlow <span className="text-[#31b963]">AI</span>
           </span>
         </div>
-        <h1 className="text-[22px] font-bold tracking-[-0.04em] text-[#1d3025]">Đăng Ký Tài Khoản</h1>
-        <p className="mt-1 text-[12px] text-[#839087]">Bắt đầu một tuần gọn gàng hơn.</p>
+        <h1 className="text-[22px] font-bold tracking-[-0.04em] text-[#1d3025]">
+          Đăng Ký Tài Khoản
+        </h1>
+        <p className="mt-1 text-[12px] text-[#839087]">
+          Bắt đầu một tuần gọn gàng hơn.
+        </p>
 
         {error && (
-          <p role="alert" className="mt-4 rounded-[10px] bg-[#fff1f0] px-3 py-2.5 text-[12px] font-medium text-[#c0443f]">
+          <p
+            role="alert"
+            className="mt-4 rounded-[10px] bg-[#fff1f0] px-3 py-2.5 text-[12px] font-medium text-[#c0443f]"
+          >
             {error}
           </p>
         )}
 
         <form onSubmit={handleRegister} className="mt-5 space-y-4">
           <label className="block text-[12px] font-bold text-[#385140]">
-            Họ tên <span className="font-normal text-[#9aa99d]">(không bắt buộc)</span>
+            Họ tên{" "}
+            <span className="font-normal text-[#9aa99d]">(không bắt buộc)</span>
             <input
               type="text"
               value={fullName}
@@ -90,7 +102,10 @@ export default function Register({
             />
           </label>
           <label className="block text-[12px] font-bold text-[#385140]">
-            Mật khẩu <span className="font-normal text-[#9aa99d]">(tối thiểu {PASSWORD_MIN} ký tự)</span>
+            Mật khẩu{" "}
+            <span className="font-normal text-[#9aa99d]">
+              (tối thiểu {PASSWORD_MIN} ký tự)
+            </span>
             <input
               type="password"
               value={password}
@@ -114,13 +129,17 @@ export default function Register({
             disabled={busy}
             className="h-11 w-full rounded-[10px] bg-[#4ade80] text-[13px] font-bold text-[#14492b] transition hover:bg-[#36d871] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {busy ? 'Đang tạo tài khoản…' : 'Đăng Ký'}
+            {busy ? "Đang tạo tài khoản…" : "Đăng Ký"}
           </button>
         </form>
 
         <p className="mt-5 text-center text-[12px] text-[#839087]">
-          Đã có tài khoản?{' '}
-          <button type="button" onClick={onGoLogin} className="font-bold text-[#2f9a58] hover:underline">
+          Đã có tài khoản?{" "}
+          <button
+            type="button"
+            onClick={onGoLogin}
+            className="font-bold text-[#2f9a58] hover:underline"
+          >
             Đăng nhập
           </button>
         </p>

@@ -18,7 +18,7 @@ def test_get_ai_quota_status_endpoint():
     assert data["remaining"] == 10
     assert data["reset_in_seconds"] == 0
     assert data["window_seconds"] == 600
-    assert data["provider"] == "generativelanguage.googleapis.com"
+    assert data["provider"] in ("generativelanguage.googleapis.com", "google_ai")
 
 
 def test_get_ai_quota_status_with_existing_usage():

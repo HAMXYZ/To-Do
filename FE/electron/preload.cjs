@@ -1,16 +1,15 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer } = require("electron")
 
-contextBridge.exposeInMainWorld('electronAPI', {
+contextBridge.exposeInMainWorld("electronAPI", {
   isElectron: true,
   sendNotification: (payload) => {
-    ipcRenderer.send('app:notification', payload)
+    ipcRenderer.send("app:notification", payload)
   },
   onNavigateCurrentWeek: (callback) => {
     const handler = () => callback()
-    ipcRenderer.on('navigate:current-week', handler)
+    ipcRenderer.on("navigate:current-week", handler)
     return () => {
-      ipcRenderer.removeListener('navigate:current-week', handler)
+      ipcRenderer.removeListener("navigate:current-week", handler)
     }
   },
 })
-

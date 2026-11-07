@@ -3,3 +3,16 @@
 **/.env
 **/__pycache__/
 *.pyc
+
+# User documents & reports
+report/
+reports/
+hieu.pdf
+ProductBacklog_Nhom13.xlsx
+
+# Node.js
+node_modules/
+
+# Build files
+dist/
+.next/

@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react'
-import * as api from '../api'
-import Icon from './Icon'
+import { useState, useEffect, useRef, type FormEvent } from "react"
+import * as api from "../api"
+import Icon from "./Icon"
 
 interface Message {
   id: string
-  sender: 'user' | 'assistant'
+  sender: "user" | "assistant"
   text: string
   action?: api.AssistantAction | null
   added?: boolean
@@ -13,30 +13,40 @@ interface Message {
 
 type Props = {
   currentDay: number
+  todayDate?: string
+  weekOffset?: number
   onClose: () => void
-  onAddTask: (task: {
-    title: string
-    day: number
-    time?: string
-    isStarred?: boolean
-    priority?: 'low' | 'medium' | 'high'
-  }) => Promise<boolean>
+  onAddTask: (task: api.AssistantActionTask) => Promise<boolean>
 }
 
-const dayNames = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật']
+const dayNames = [
+  "Thứ Hai",
+  "Thứ Ba",
+  "Thứ Tư",
+  "Thứ Năm",
+  "Thứ Sáu",
+  "Thứ Bảy",
+  "Chủ Nhật",
+]
 
-export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Props) {
+export default function AIAssistantModal({
+  currentDay,
+  todayDate,
+  weekOffset,
+  onClose,
+  onAddTask,
+}: Props) {
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: 'greeting',
-      sender: 'assistant',
-      text: 'Xin chào! Tôi là Trợ lý FocusFlow AI. Bạn có thể nhấn nút Micro để nói hoặc gõ tin nhắn để tôi hỗ trợ hỏi đáp nhanh hoặc tạo công việc vào lịch tuần nhé! ✨',
+      id: "greeting",
+      sender: "assistant",
+      text: "Xin chào! Tôi là Trợ lý FocusFlow AI. Bạn có thể nhấn nút Micro để nói hoặc gõ tin nhắn để tôi hỗ trợ hỏi đáp nhanh hoặc tạo công việc vào lịch tuần nhé! ✨",
     },
   ])
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [micError, setMicError] = useState('')
+  const [error, setError] = useState("")
+  const [micError, setMicError] = useState("")
   const [isListening, setIsListening] = useState(false)
   const [quota, setQuota] = useState<api.AiQuotaInfo | null>(null)
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null)
@@ -47,7 +57,10 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
 
   // Tải thông tin quota (US-38)
   useEffect(() => {
-    api.getAiQuota().then(setQuota).catch(() => {})
+    api
+      .getAiQuota()
+      .then(setQuota)
+      .catch(() => {})
   }, [])
 
   // Kiểm tra hỗ trợ Web Speech API
@@ -60,7 +73,7 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
 
   // Cuộn xuống tin nhắn mới nhất
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, loading])
 
   // Đếm ngược Rate Limit (US-38)
@@ -80,12 +93,14 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
 
   // Khởi động / Dừng nhận diện giọng nói (US-33 & US-33.EX1)
   function toggleListening() {
-    setMicError('')
-    setError('')
+    setMicError("")
+    setError("")
 
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRec) {
-      setMicError('⚠️ Trình duyệt hiện tại không hỗ trợ Web Speech API. Bạn vui lòng sử dụng khung nhập liệu văn bản bên dưới.')
+      setMicError(
+        "⚠️ Trình duyệt hiện tại không hỗ trợ Web Speech API. Bạn vui lòng sử dụng khung nhập liệu văn bản bên dưới.",
+      )
       return
     }
 
@@ -101,17 +116,17 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
 
     try {
       const recognition = new SpeechRec()
-      recognition.lang = 'vi-VN'
+      recognition.lang = "vi-VN"
       recognition.continuous = false
       recognition.interimResults = true
 
       recognition.onstart = () => {
         setIsListening(true)
-        setMicError('')
+        setMicError("")
       }
 
       recognition.onresult = (event: any) => {
-        let transcript = ''
+        let transcript = ""
         for (let i = event.resultIndex; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript
         }
@@ -123,12 +138,29 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
       // Xử lý ngoại lệ theo US-33.EX1 (Quyền micro, lỗi kết nối)
       recognition.onerror = (event: any) => {
         setIsListening(false)
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          setMicError('⚠️ Quyền truy cập microphone bị từ chối hoặc bị chặn. Bạn vui lòng cấp quyền truy cập micro trong cài đặt trình duyệt hoặc nhập liệu bằng văn bản.')
-        } else if (event.error === 'no-speech') {
-          setMicError('Chưa nhận được âm thanh. Hãy thử lại hoặc gõ tin nhắn vào ô bên dưới.')
+        if (
+          event.error === "not-allowed" ||
+          event.error === "service-not-allowed"
+        ) {
+          setMicError(
+            "⚠️ Quyền truy cập microphone bị từ chối hoặc bị chặn. Bạn vui lòng cấp quyền truy cập micro trong cài đặt trình duyệt hoặc nhập liệu bằng văn bản.",
+          )
+        } else if (event.error === "no-speech") {
+          setMicError(
+            "Chưa nhận được âm thanh. Hãy thử lại hoặc gõ tin nhắn vào ô bên dưới.",
+          )
+        } else if (event.error === "network") {
+          setMicError(
+            "Dịch vụ giọng nói Google Speech API không hỗ trợ trong cửa sổ Electron Desktop do chính sách mạng của Google. Vui lòng mở bằng trình duyệt Google Chrome (http://localhost:8443) để nói, hoặc nhập liệu trực tiếp bằng văn bản!",
+          )
+        } else if (event.error === "network") {
+          setMicError(
+            "Dịch vụ giọng nói Google Speech API không hỗ trợ trong cửa sổ Electron Desktop do chính sách mạng của Google. Vui lòng mở bằng trình duyệt Google Chrome (http://localhost:8443) để nói, hoặc nhập liệu trực tiếp bằng văn bản!",
+          )
         } else {
-          setMicError(`Không thể nhận diện giọng nói (${event.error}). Bạn có thể nhập liệu bằng văn bản.`)
+          setMicError(
+            `Không thể nhận diện giọng nói (${event.error}). Bạn có thể nhập liệu bằng văn bản.`,
+          )
         }
       }
 
@@ -140,7 +172,9 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
       recognition.start()
     } catch (err) {
       setIsListening(false)
-      setMicError('Không thể khởi tạo micro. Bạn vui lòng thử lại hoặc gõ bằng bàn phím.')
+      setMicError(
+        "Không thể khởi tạo micro. Bạn vui lòng thử lại hoặc gõ bằng bàn phím.",
+      )
     }
   }
 
@@ -160,25 +194,32 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
 
     const userMsg: Message = {
       id: `user-${Date.now()}`,
-      sender: 'user',
+      sender: "user",
       text: textToSend,
     }
 
     setMessages((prev) => [...prev, userMsg])
-    setInput('')
+    setInput("")
     setLoading(true)
-    setError('')
-    setMicError('')
+    setError("")
+    setMicError("")
 
     try {
-      const res = await api.askAssistant(textToSend, { currentDay })
+      const res = await api.askAssistant(textToSend, {
+        currentDay,
+        todayDate,
+        weekOffset,
+      })
 
       // Cập nhật lại Quota
-      api.getAiQuota().then(setQuota).catch(() => {})
+      api
+        .getAiQuota()
+        .then(setQuota)
+        .catch(() => {})
 
       const assistantMsg: Message = {
         id: `assistant-${Date.now()}`,
-        sender: 'assistant',
+        sender: "assistant",
         text: res.reply,
         action: res.action,
       }
@@ -187,23 +228,39 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
     } catch (cause) {
       if (cause instanceof api.ApiError) {
         if (cause.status === 429) {
-          const waitTime = cause.retryAfter && cause.retryAfter > 0 ? cause.retryAfter : 60
+          const waitTime =
+            cause.retryAfter && cause.retryAfter > 0 ? cause.retryAfter : 60
           setRetryCountdown(waitTime)
-          if (cause.code === 'PROVIDER_QUOTA_EXCEEDED') {
-            setError('⚠️ Nhà cung cấp AI đang quá tải lượt yêu cầu. Vui lòng thử lại sau.')
+          if (cause.code === "PROVIDER_QUOTA_EXCEEDED") {
+            setError(
+              "⚠️ Nhà cung cấp AI đang quá tải lượt yêu cầu. Vui lòng thử lại sau.",
+            )
           } else {
-            setError('⚠️ Bạn đã đạt giới hạn 10 yêu cầu AI trong 10 phút (US-38).')
+            setError(
+              "⚠️ Bạn đã đạt giới hạn 10 yêu cầu AI trong 10 phút (US-38).",
+            )
           }
-          api.getAiQuota().then(setQuota).catch(() => {})
+          api
+            .getAiQuota()
+            .then(setQuota)
+            .catch(() => {})
         } else if (cause.status === 504) {
-          setError('⏱️ Yêu cầu phản hồi từ AI đã quá thời gian chờ (Timeout). Bạn hãy thử lại.')
+          setError(
+            "⏱️ Yêu cầu phản hồi từ AI đã quá thời gian chờ (Timeout). Bạn hãy thử lại.",
+          )
         } else if (cause.status === 503) {
-          setError('🔧 Dịch vụ AI chưa sẵn sàng hoặc API key chưa được cấu hình.')
+          setError(
+            "🔧 Dịch vụ AI chưa sẵn sàng hoặc API key chưa được cấu hình.",
+          )
         } else {
           setError(cause.message)
         }
       } else {
-        setError(cause instanceof Error ? cause.message : 'Có lỗi khi kết nối với Trợ lý AI.')
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Có lỗi khi kết nối với Trợ lý AI.",
+        )
       }
       // Giữ lại text cho người dùng nếu lỗi (EX1)
       setInput(textToSend)
@@ -213,14 +270,7 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
   }
 
   async function confirmAddTask(msgId: string, task: api.AssistantActionTask) {
-    const day = task.day !== null && task.day !== undefined ? task.day : currentDay
-    const success = await onAddTask({
-      title: task.title,
-      day,
-      time: task.time ?? '',
-      isStarred: task.isStarred ?? false,
-      priority: task.priority ?? 'medium',
-    })
+    const success = await onAddTask(task)
 
     if (success) {
       setMessages((prev) =>
@@ -249,10 +299,15 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
               <Icon name="sparkle" size={18} />
             </div>
             <div>
-              <h2 id="ai-assistant-title" className="text-sm font-bold text-slate-800">
+              <h2
+                id="ai-assistant-title"
+                className="text-sm font-bold text-slate-800"
+              >
                 Trợ lý FocusFlow AI
               </h2>
-              <p className="text-[10px] text-slate-500">Hỏi đáp & Nhập liệu nhanh (US-33)</p>
+              <p className="text-[10px] text-slate-500">
+                Hỏi đáp & Nhập liệu nhanh
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -260,10 +315,10 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
               <span
                 className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
                   quota.remaining === 0
-                    ? 'border border-rose-300 bg-rose-50 text-rose-700'
+                    ? "border border-rose-300 bg-rose-50 text-rose-700"
                     : quota.remaining <= 3
-                    ? 'border border-amber-300 bg-amber-50 text-amber-700'
-                    : 'border border-emerald-300 bg-emerald-50 text-emerald-700'
+                      ? "border border-amber-300 bg-amber-50 text-amber-700"
+                      : "border border-emerald-300 bg-emerald-50 text-emerald-700"
                 }`}
                 title={`Hạn mức AI: ${quota.remaining}/${quota.limit} lượt khả dụng`}
               >
@@ -306,10 +361,10 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
             <div
               key={msg.id}
               className={`flex items-start gap-2.5 ${
-                msg.sender === 'user' ? 'flex-row-reverse' : ''
+                msg.sender === "user" ? "flex-row-reverse" : ""
               }`}
             >
-              {msg.sender === 'assistant' ? (
+              {msg.sender === "assistant" ? (
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800">
                   <Icon name="sparkle" size={14} />
                 </div>
@@ -321,15 +376,15 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
 
               <div
                 className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed ${
-                  msg.sender === 'user'
-                    ? 'bg-emerald-600 text-white rounded-tr-none'
-                    : 'bg-[#f3f6f4] text-slate-800 rounded-tl-none border border-[#e5ebe7]'
+                  msg.sender === "user"
+                    ? "bg-emerald-600 text-white rounded-tr-none"
+                    : "bg-[#f3f6f4] text-slate-800 rounded-tl-none border border-[#e5ebe7]"
                 }`}
               >
                 <p className="whitespace-pre-wrap">{msg.text}</p>
 
                 {/* Thẻ đề xuất tạo task (Action) */}
-                {msg.action?.type === 'create_task' && msg.action.task && (
+                {msg.action?.type === "create_task" && msg.action.task && (
                   <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 text-slate-800 shadow-sm">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
@@ -340,7 +395,7 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
                           {msg.action.task.title}
                         </h4>
                       </div>
-                      {msg.action.task.is_starred && (
+                      {msg.action.task.isStarred && (
                         <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                           ⭐ Ưu tiên
                         </span>
@@ -349,7 +404,23 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
 
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600">
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium">
-                        📅 {msg.action.task.day !== null && msg.action.task.day !== undefined ? dayNames[msg.action.task.day] : 'Hôm nay'}
+                        📅{" "}
+                        {msg.action.task.date
+                          ? (() => {
+                              const parts = msg.action.task.date.split("-")
+                              const d = parts[2]
+                              const m = parts[1]
+                              const dName =
+                                msg.action.task.day !== null &&
+                                msg.action.task.day !== undefined
+                                  ? dayNames[msg.action.task.day]
+                                  : ""
+                              return dName ? `${dName}, ${d}/${m}` : `${d}/${m}`
+                            })()
+                          : msg.action.task.day !== null &&
+                            msg.action.task.day !== undefined
+                            ? dayNames[msg.action.task.day]
+                            : "Hôm nay"}
                       </span>
                       {msg.action.task.time && (
                         <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium">
@@ -364,11 +435,13 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
                       onClick={() => confirmAddTask(msg.id, msg.action!.task!)}
                       className={`mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-bold transition ${
                         msg.added
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
                       }`}
                     >
-                      {msg.added ? '✓ Đã thêm vào kế hoạch' : '➕ Thêm công việc vào lịch'}
+                      {msg.added
+                        ? "✓ Đã thêm vào kế hoạch"
+                        : "➕ Thêm công việc vào lịch"}
                     </button>
                   </div>
                 )}
@@ -386,7 +459,9 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
                   <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-600" />
                   <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-600 [animation-delay:0.2s]" />
                   <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-600 [animation-delay:0.4s]" />
-                  <span className="ml-1 text-[11px] text-emerald-800 font-medium">Trợ lý AI đang xử lý...</span>
+                  <span className="ml-1 text-[11px] text-emerald-800 font-medium">
+                    Trợ lý AI đang xử lý...
+                  </span>
                 </div>
               </div>
             </div>
@@ -397,24 +472,22 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
 
         {/* Gợi ý mẫu */}
         <div className="flex flex-wrap gap-1.5 border-t border-[#edf2ee] bg-[#fafcfb] px-4 py-2 text-[11px]">
-          <span className="text-[10px] font-semibold text-slate-400 self-center mr-1">Gợi ý:</span>
+          <span className="text-[10px] font-semibold text-slate-400 self-center mr-1">
+            Gợi ý:
+          </span>
           <button
             type="button"
-            onClick={() => handleSend('Hôm nay tôi nên tập trung vào việc gì?')}
+            onClick={() => handleSend("Hôm nay tôi nên tập trung vào việc gì?")}
             className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 text-[11px]"
           >
             💡 Việc cần làm hôm nay?
           </button>
+
           <button
             type="button"
-            onClick={() => handleSend('Nhắc tôi nộp báo cáo lúc 16:00 ngày mai ⭐')}
-            className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 text-[11px]"
-          >
-            📝 Tạo việc: Nộp báo cáo 16:00
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSend('Cách quản lý thời gian hiệu quả theo Pomodoro?')}
+            onClick={() =>
+              handleSend("Cách quản lý thời gian hiệu quả theo Pomodoro?")
+            }
             className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 text-[11px]"
           >
             ⏱️ Mẹo quản lý thời gian
@@ -436,15 +509,15 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
               onClick={toggleListening}
               title={
                 isListening
-                  ? 'Đang lắng nghe... Bấm để dừng'
+                  ? "Đang lắng nghe... Bấm để dừng"
                   : speechSupported
-                  ? 'Nói để nhập liệu bằng giọng nói (US-33)'
-                  : 'Trình duyệt không hỗ trợ Web Speech'
+                    ? "Nói để nhập liệu bằng giọng nói"
+                    : "Trình duyệt không hỗ trợ Web Speech"
               }
               className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${
                 isListening
-                  ? 'bg-rose-500 text-white animate-pulse shadow-md shadow-rose-200'
-                  : 'border border-slate-200 bg-[#f7faf8] text-slate-700 hover:bg-emerald-50 hover:text-emerald-700'
+                  ? "bg-rose-500 text-white animate-pulse shadow-md shadow-rose-200"
+                  : "border border-slate-200 bg-[#f7faf8] text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
               }`}
             >
               <Icon name="mic" size={18} />
@@ -463,17 +536,23 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
               onChange={(e) => setInput(e.target.value)}
               placeholder={
                 isListening
-                  ? 'Đang lắng nghe giọng nói của bạn... Hãy nói yêu cầu'
+                  ? "Đang lắng nghe giọng nói của bạn... Hãy nói yêu cầu"
                   : 'Hỏi đáp hoặc gõ: "Tạo việc họp nhóm lúc 10h thứ Ba"...'
               }
-              disabled={loading || (retryCountdown !== null && retryCountdown > 0)}
+              disabled={
+                loading || (retryCountdown !== null && retryCountdown > 0)
+              }
               className="h-10 flex-1 rounded-xl border border-slate-200 bg-[#fbfdfb] px-3.5 text-xs sm:text-sm text-slate-800 outline-none focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
             />
 
             {/* Nút gửi */}
             <button
               type="submit"
-              disabled={loading || !input.trim() || (retryCountdown !== null && retryCountdown > 0)}
+              disabled={
+                loading ||
+                !input.trim() ||
+                (retryCountdown !== null && retryCountdown > 0)
+              }
               className="flex h-10 items-center justify-center rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Gửi
@@ -482,7 +561,8 @@ export default function AIAssistantModal({ currentDay, onClose, onAddTask }: Pro
 
           {/* Ghi chú minh bạch theo US-33.EX1 */}
           <p className="mt-2 text-center text-[10px] text-slate-400">
-            Micro chuyển giọng nói thành văn bản trên máy. Trợ lý AI phân tích để trả lời và đề xuất việc.
+            Micro chuyển giọng nói thành văn bản trên máy. Trợ lý AI phân tích
+            để trả lời và đề xuất việc.
           </p>
         </footer>
       </section>

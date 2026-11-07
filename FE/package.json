@@ -1,5 +1,7 @@
 {
-  "name": "figma-make-app",
+  "name": "focusflow-ai",
+  "productName": "FocusFlow AI",
+  "description": "FocusFlow AI - Ứng dụng quản lý công việc và thói quen thông minh",
   "private": true,
   "version": "1.0.0",
   "type": "module",

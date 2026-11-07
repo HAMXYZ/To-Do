@@ -10,7 +10,15 @@ from src.seed import seed_database
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Tự động nạp dữ liệu mẫu khi khởi động BE (nếu cần)."""
+    """Tự động tạo bảng (khi chạy SQLite/standalone) và nạp dữ liệu mẫu."""
+    try:
+        from src.db import engine
+        from src.models import Base
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        print(f"[FocusFlow AI] Thông tin khởi tạo bảng: {e}")
+
     try:
         await seed_database()
     except Exception as exc:

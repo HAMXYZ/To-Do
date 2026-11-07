@@ -1,0 +1,13 @@
+{
+  "name": "focusflow-ai-backend",
+  "version": "1.0.0",
+  "description": "FocusFlow AI Backend Service",
+  "main": "src/server.py",
+  "scripts": {
+    "start": "uvicorn src.server:app --host 0.0.0.0 --port 8000",
+    "dev": "uvicorn src.server:app --host 0.0.0.0 --port 8000 --reload",
+    "test": "pytest tests"
+  },
+  "keywords": ["fastapi", "focusflow", "ai", "todo", "productivity"],
+  "license": "ISC"
+}

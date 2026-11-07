@@ -6,7 +6,8 @@ export function playNotificationChime(): void {
   try {
     const AudioCtx =
       window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext
     if (!AudioCtx) return
     const ctx = new AudioCtx()
     const now = ctx.currentTime
@@ -15,7 +16,7 @@ export function playNotificationChime(): void {
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
 
-    osc.type = 'sine'
+    osc.type = "sine"
     osc.frequency.setValueAtTime(587.33, now) // Note D5
     osc.frequency.setValueAtTime(880.0, now + 0.12) // Note A5
 
@@ -33,24 +34,24 @@ export function playNotificationChime(): void {
 }
 
 export function isNotificationSupported(): boolean {
-  if (typeof window === 'undefined') return false
+  if (typeof window === "undefined") return false
   if (window.electronAPI?.isElectron) return true
-  return 'Notification' in window
+  return "Notification" in window
 }
 
-export function getNotificationPermission(): NotificationPermission | 'unsupported' {
-  if (!isNotificationSupported()) return 'unsupported'
-  if (window.electronAPI?.isElectron) return 'granted'
+export function getNotificationPermission(): NotificationPermission | "unsupported" {
+  if (!isNotificationSupported()) return "unsupported"
+  if (window.electronAPI?.isElectron) return "granted"
   return Notification.permission
 }
 
-export async function requestNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
-  if (!isNotificationSupported()) return 'unsupported'
-  if (window.electronAPI?.isElectron) return 'granted'
+export async function requestNotificationPermission(): Promise<NotificationPermission | "unsupported"> {
+  if (!isNotificationSupported()) return "unsupported"
+  if (window.electronAPI?.isElectron) return "granted"
   try {
     return await Notification.requestPermission()
   } catch {
-    return 'denied'
+    return "denied"
   }
 }
 
@@ -61,12 +62,14 @@ export interface ShowNotificationOptions {
   onClick?: () => void
 }
 
-export function showAppNotification({
-  title,
-  body,
-  playSound = true,
-  onClick,
-}: ShowNotificationOptions): void {
+export function showAppNotification(
+  input: string | ShowNotificationOptions,
+): void {
+  const options: ShowNotificationOptions =
+    typeof input === "string"
+      ? { title: "FocusFlow AI", body: input, playSound: true }
+      : input
+  const { title, body, playSound = true, onClick } = options
   // 1. Nếu đang chạy trong Desktop Electron (Native Windows Notification kèm âm thanh hệ thống)
   if (window.electronAPI?.isElectron && window.electronAPI.sendNotification) {
     window.electronAPI.sendNotification({ title, body, sound: playSound })
@@ -74,11 +77,11 @@ export function showAppNotification({
   }
 
   // 2. Chạy trên trình duyệt Web (Web Notification API)
-  if ('Notification' in window && Notification.permission === 'granted') {
+  if ("Notification" in window && Notification.permission === "granted") {
     try {
       const notification = new Notification(title, {
         body,
-        icon: '/favicon.ico',
+        icon: "/favicon.ico",
         silent: !playSound,
       })
 
@@ -92,8 +95,7 @@ export function showAppNotification({
         notification.close()
       }
     } catch (err) {
-      console.warn('Could not display Web Notification:', err)
+      console.warn("Could not display Web Notification:", err)
     }
   }
 }
-

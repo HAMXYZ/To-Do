@@ -1,24 +1,30 @@
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import Icon from './Icon'
-import type { Category, TaskPriority } from '../types'
-import type { QuickTaskDraft } from '../hooks/useAppData'
+import React, {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
+import { createPortal } from "react-dom"
+import Icon from "./Icon"
+import type { Category, TaskPriority } from "../types"
+import type { QuickTaskDraft } from "../hooks/useAppData"
 
 export function InlineTimePicker({
   value,
   onChange,
-  variant = 'icon',
-  placeholder = 'Time (optional)',
-  className = '',
+  variant = "icon",
+  placeholder = "Time (optional)",
+  className = "",
 }: {
   value: string
   onChange: (time: string) => void
-  variant?: 'icon' | 'field'
+  variant?: "icon" | "field"
   placeholder?: string
   className?: string
 }) {
   const [open, setOpen] = useState(false)
-  const [draftTime, setDraftTime] = useState(value || '09:00')
+  const [draftTime, setDraftTime] = useState(value || "09:00")
   const [position, setPosition] = useState({ left: 0, top: 0 })
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -32,7 +38,10 @@ export function InlineTimePicker({
       const trigger = triggerRef.current
       if (!trigger) return
       const rect = trigger.getBoundingClientRect()
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8))
+      const left = Math.max(
+        8,
+        Math.min(rect.left, window.innerWidth - panelWidth - 8),
+      )
       const top =
         rect.bottom + panelHeight + 8 <= window.innerHeight
           ? rect.bottom + 6
@@ -41,11 +50,11 @@ export function InlineTimePicker({
     }
 
     updatePosition()
-    window.addEventListener('resize', updatePosition)
-    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener("resize", updatePosition)
+    window.addEventListener("scroll", updatePosition, true)
     return () => {
-      window.removeEventListener('resize', updatePosition)
-      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener("resize", updatePosition)
+      window.removeEventListener("scroll", updatePosition, true)
     }
   }, [open])
 
@@ -55,72 +64,85 @@ export function InlineTimePicker({
     function onPointerDown(event: PointerEvent) {
       const target = event.target
       if (!(target instanceof Node)) return
-      if (!triggerRef.current?.contains(target) && !panelRef.current?.contains(target)) {
+      if (
+        !triggerRef.current?.contains(target) &&
+        !panelRef.current?.contains(target)
+      ) {
         setOpen(false)
       }
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setOpen(false)
         triggerRef.current?.focus()
       }
     }
 
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener("pointerdown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
     return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener("pointerdown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
     }
   }, [open])
 
   function showPicker() {
-    setDraftTime(value || '09:00')
+    setDraftTime(value || "09:00")
     setOpen((current) => !current)
   }
 
-  function choosePart(part: 'hour' | 'minute' | 'period', selected: string) {
-    const [storedHour, storedMinute] = draftTime.split(':').map(Number)
+  function choosePart(part: "hour" | "minute" | "period", selected: string) {
+    const [storedHour, storedMinute] = draftTime.split(":").map(Number)
     const isPm = storedHour >= 12
     const hour12 = storedHour % 12 || 12
-    const hour = part === 'hour' ? Number(selected) : hour12
-    const minute = part === 'minute' ? Number(selected) : storedMinute
-    const period = part === 'period' ? selected === 'PM' : isPm
+    const hour = part === "hour" ? Number(selected) : hour12
+    const minute = part === "minute" ? Number(selected) : storedMinute
+    const period = part === "period" ? selected === "PM" : isPm
     const hour24 = (hour % 12) + (period ? 12 : 0)
-    setDraftTime(`${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`)
+    setDraftTime(
+      `${String(hour24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    )
   }
 
   function formatTime(time: string) {
-    if (!time) return ''
-    const [hour, minute] = time.split(':').map(Number)
-    return `${String(hour % 12 || 12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${
-      hour >= 12 ? 'PM' : 'AM'
+    if (!time) return ""
+    const [hour, minute] = time.split(":").map(Number)
+    return `${String(hour % 12 || 12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${
+      hour >= 12 ? "PM" : "AM"
     }`
   }
 
-  const [draftHour, draftMinute] = draftTime.split(':').map(Number)
+  const [draftHour, draftMinute] = draftTime.split(":").map(Number)
   const selectedHour = draftHour % 12 || 12
-  const selectedMinute = String(Math.min(55, Math.max(0, Math.round(draftMinute / 5) * 5))).padStart(2, '0')
-  const selectedPeriod = draftHour >= 12 ? 'PM' : 'AM'
-  const hours = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'))
-  const minutes = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, '0'))
+  const selectedMinute = String(
+    Math.min(55, Math.max(0, Math.round(draftMinute / 5) * 5)),
+  ).padStart(2, "0")
+  const selectedPeriod = draftHour >= 12 ? "PM" : "AM"
+  const hours = Array.from({ length: 12 }, (_, index) =>
+    String(index + 1).padStart(2, "0"),
+  )
+  const minutes = Array.from({ length: 12 }, (_, index) =>
+    String(index * 5).padStart(2, "0"),
+  )
 
   return (
     <>
-      {variant === 'icon' ? (
+      {variant === "icon" ? (
         <button
           ref={triggerRef}
           type="button"
           onClick={showPicker}
-          aria-label={value ? `Change task time, ${formatTime(value)}` : 'Set task time'}
+          aria-label={
+            value ? `Change task time, ${formatTime(value)}` : "Set task time"
+          }
           aria-expanded={open}
           aria-haspopup="dialog"
-          title={value ? `Task time: ${formatTime(value)}` : 'Set task time'}
+          title={value ? `Task time: ${formatTime(value)}` : "Set task time"}
           className={`inline-time-picker-btn flex h-8 shrink-0 items-center justify-center rounded-full transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80] ${
             value || open
-              ? 'bg-[#dcfce7] text-[#22703e]'
-              : 'border border-[#edf2ed] bg-white text-[#718477] hover:bg-[#eaf8ee] hover:text-[#22703e]'
+              ? "bg-[#dcfce7] text-[#22703e]"
+              : "border border-[#edf2ed] bg-white text-[#718477] hover:bg-[#eaf8ee] hover:text-[#22703e]"
           } ${className}`}
         >
           <Icon name="clock" size={14} />
@@ -139,12 +161,18 @@ export function InlineTimePicker({
           aria-expanded={open}
           aria-haspopup="dialog"
           className={`flex h-8 w-full min-w-0 items-center justify-between rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[10px] transition outline-none focus:border-[#4ade80] hover:border-[#bde8c7] ${
-            value ? 'text-[#2e4736] font-semibold' : 'text-[#8fa093]'
+            value ? "text-[#2e4736] font-semibold" : "text-[#8fa093]"
           } ${className}`}
         >
           <div className="flex items-center gap-1.5 truncate">
-            <Icon name="clock" size={13} className={value ? 'text-[#35ab66]' : 'text-[#8fa093]'} />
-            <span className="truncate">{value ? formatTime(value) : placeholder}</span>
+            <Icon
+              name="clock"
+              size={13}
+              className={value ? "text-[#35ab66]" : "text-[#8fa093]"}
+            />
+            <span className="truncate">
+              {value ? formatTime(value) : placeholder}
+            </span>
           </div>
           <span className="text-[9px] text-[#8fa093] shrink-0 ml-1">▼</span>
         </button>
@@ -160,28 +188,32 @@ export function InlineTimePicker({
             style={{ left: position.left, top: position.top }}
           >
             <div className="mb-2 flex items-center justify-between px-1">
-              <span className="text-[11px] font-bold text-[#385140]">Choose a time</span>
-              <span className="text-[11px] font-semibold text-[#4c9b64]">{formatTime(draftTime)}</span>
+              <span className="text-[11px] font-bold text-[#385140]">
+                Choose a time
+              </span>
+              <span className="text-[11px] font-semibold text-[#4c9b64]">
+                {formatTime(draftTime)}
+              </span>
             </div>
             <div className="grid grid-cols-[1fr_1fr_0.8fr] gap-2">
               {[
                 {
-                  label: 'HOUR',
+                  label: "HOUR",
                   values: hours,
-                  selected: String(selectedHour).padStart(2, '0'),
-                  part: 'hour' as const,
+                  selected: String(selectedHour).padStart(2, "0"),
+                  part: "hour" as const,
                 },
                 {
-                  label: 'MINUTE',
+                  label: "MINUTE",
                   values: minutes,
                   selected: selectedMinute,
-                  part: 'minute' as const,
+                  part: "minute" as const,
                 },
                 {
-                  label: 'AM/PM',
-                  values: ['AM', 'PM'],
+                  label: "AM/PM",
+                  values: ["AM", "PM"],
                   selected: selectedPeriod,
-                  part: 'period' as const,
+                  part: "period" as const,
                 },
               ].map((column) => (
                 <div key={column.part} className="min-w-0">
@@ -197,8 +229,8 @@ export function InlineTimePicker({
                         aria-pressed={column.selected === option}
                         className={`w-full rounded-lg py-1.5 text-[11px] font-semibold transition ${
                           column.selected === option
-                            ? 'bg-[#4ade80] text-white'
-                            : 'text-[#617467] hover:bg-[#e3f8e8]'
+                            ? "bg-[#4ade80] text-white"
+                            : "text-[#617467] hover:bg-[#e3f8e8]"
                         }`}
                       >
                         {option}
@@ -212,7 +244,7 @@ export function InlineTimePicker({
               <button
                 type="button"
                 onClick={() => {
-                  onChange('')
+                  onChange("")
                   setOpen(false)
                 }}
                 className="rounded-lg px-2 py-1.5 text-[10px] font-semibold text-[#78897d] transition hover:bg-[#fee2e2] hover:text-[#b94743]"
@@ -233,7 +265,7 @@ export function InlineTimePicker({
               </button>
             </div>
           </div>,
-          document.body
+          document.body,
         )}
     </>
   )
@@ -263,7 +295,10 @@ export function CategoryPicker({
       const panelWidth = Math.max(rect.width, 140)
       const panelHeight = 160
 
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8))
+      const left = Math.max(
+        8,
+        Math.min(rect.left, window.innerWidth - panelWidth - 8),
+      )
       const top =
         rect.bottom + panelHeight + 8 <= window.innerHeight
           ? rect.bottom + 4
@@ -273,11 +308,11 @@ export function CategoryPicker({
     }
 
     updatePosition()
-    window.addEventListener('resize', updatePosition)
-    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener("resize", updatePosition)
+    window.addEventListener("scroll", updatePosition, true)
     return () => {
-      window.removeEventListener('resize', updatePosition)
-      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener("resize", updatePosition)
+      window.removeEventListener("scroll", updatePosition, true)
     }
   }, [open])
 
@@ -287,22 +322,25 @@ export function CategoryPicker({
     function onPointerDown(event: PointerEvent) {
       const target = event.target
       if (!(target instanceof Node)) return
-      if (!triggerRef.current?.contains(target) && !panelRef.current?.contains(target)) {
+      if (
+        !triggerRef.current?.contains(target) &&
+        !panelRef.current?.contains(target)
+      ) {
         setOpen(false)
       }
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setOpen(false)
       }
     }
 
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener("pointerdown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
     return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener("pointerdown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
     }
   }, [open])
 
@@ -339,14 +377,18 @@ export function CategoryPicker({
             role="listbox"
             aria-label="Choose category"
             className="fixed z-[100] max-h-48 overflow-y-auto rounded-xl border border-[#e2ece4] bg-white p-1 text-[#243c2d] shadow-[0_12px_36px_rgba(20,50,30,0.15)]"
-            style={{ left: position.left, top: position.top, width: position.width }}
+            style={{
+              left: position.left,
+              top: position.top,
+              width: position.width,
+            }}
           >
             {value.trim() && (
               <button
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault()
-                  onChange('')
+                  onChange("")
                   setOpen(false)
                 }}
                 className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-[10px] font-medium text-[#c05652] hover:bg-[#fff2f1]"
@@ -365,8 +407,8 @@ export function CategoryPicker({
                 }}
                 className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[11px] transition ${
                   value.trim().toLowerCase() === category.name.toLowerCase()
-                    ? 'bg-[#eaf8ee] font-bold text-[#23773f]'
-                    : 'text-[#324b3a] hover:bg-[#f2f8f3]'
+                    ? "bg-[#eaf8ee] font-bold text-[#23773f]"
+                    : "text-[#324b3a] hover:bg-[#f2f8f3]"
                 }`}
               >
                 <span>{category.name}</span>
@@ -381,7 +423,7 @@ export function CategoryPicker({
               </p>
             )}
           </div>,
-          document.body
+          document.body,
         )}
     </>
   )
@@ -391,11 +433,11 @@ export function PriorityPicker({
   value,
   onChange,
 }: {
-  value: TaskPriority | ''
-  onChange: (val: TaskPriority | '') => void
+  value: TaskPriority | ""
+  onChange: (val: TaskPriority | "") => void
 }) {
   const [open, setOpen] = useState(false)
-  const [draftPriority, setDraftPriority] = useState<TaskPriority | ''>(value)
+  const [draftPriority, setDraftPriority] = useState<TaskPriority | "">(value)
   const [position, setPosition] = useState({ left: 0, top: 0 })
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -409,7 +451,10 @@ export function PriorityPicker({
       const trigger = triggerRef.current
       if (!trigger) return
       const rect = trigger.getBoundingClientRect()
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8))
+      const left = Math.max(
+        8,
+        Math.min(rect.left, window.innerWidth - panelWidth - 8),
+      )
       const top =
         rect.bottom + panelHeight + 8 <= window.innerHeight
           ? rect.bottom + 4
@@ -419,11 +464,11 @@ export function PriorityPicker({
     }
 
     updatePosition()
-    window.addEventListener('resize', updatePosition)
-    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener("resize", updatePosition)
+    window.addEventListener("scroll", updatePosition, true)
     return () => {
-      window.removeEventListener('resize', updatePosition)
-      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener("resize", updatePosition)
+      window.removeEventListener("scroll", updatePosition, true)
     }
   }, [open])
 
@@ -433,23 +478,26 @@ export function PriorityPicker({
     function onPointerDown(event: PointerEvent) {
       const target = event.target
       if (!(target instanceof Node)) return
-      if (!triggerRef.current?.contains(target) && !panelRef.current?.contains(target)) {
+      if (
+        !triggerRef.current?.contains(target) &&
+        !panelRef.current?.contains(target)
+      ) {
         setOpen(false)
       }
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setOpen(false)
         triggerRef.current?.focus()
       }
     }
 
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener("pointerdown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
     return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener("pointerdown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
     }
   }, [open])
 
@@ -459,9 +507,9 @@ export function PriorityPicker({
   }
 
   const priorityLabels: Record<TaskPriority, string> = {
-    high: 'High',
-    medium: 'Medium',
-    low: 'Low',
+    high: "High",
+    medium: "Medium",
+    low: "Low",
   }
 
   return (
@@ -470,14 +518,20 @@ export function PriorityPicker({
         ref={triggerRef}
         type="button"
         onClick={showPicker}
-        aria-label={value ? `Priority: ${priorityLabels[value]}` : 'Choose priority'}
+        aria-label={
+          value ? `Priority: ${priorityLabels[value]}` : "Choose priority"
+        }
         aria-expanded={open}
         aria-haspopup="dialog"
         className={`flex h-8 w-full min-w-0 items-center justify-between rounded-lg border bg-[#fbfdfb] px-2 text-[10px] transition outline-none ${
-          open ? 'border-[#4ade80] ring-1 ring-[#4ade80]/30' : 'border-[#edf2ed] hover:border-[#bde8c7]'
-        } ${value ? 'font-semibold text-[#243c2d]' : 'text-[#9aa99d]'}`}
+          open
+            ? "border-[#4ade80] ring-1 ring-[#4ade80]/30"
+            : "border-[#edf2ed] hover:border-[#bde8c7]"
+        } ${value ? "font-semibold text-[#243c2d]" : "text-[#9aa99d]"}`}
       >
-        <span className="truncate">{value ? priorityLabels[value] : 'Priority'}</span>
+        <span className="truncate">
+          {value ? priorityLabels[value] : "Priority"}
+        </span>
         <span className="text-[9px] text-[#8fa093] shrink-0 ml-1">▼</span>
       </button>
 
@@ -491,13 +545,15 @@ export function PriorityPicker({
             style={{ left: position.left, top: position.top }}
           >
             <div className="mb-2 flex items-center justify-between px-1">
-              <span className="text-[11px] font-bold text-[#385140]">Priority</span>
+              <span className="text-[11px] font-bold text-[#385140]">
+                Priority
+              </span>
               <span className="text-[11px] font-semibold text-[#4c9b64]">
-                {draftPriority ? priorityLabels[draftPriority] : 'None'}
+                {draftPriority ? priorityLabels[draftPriority] : "None"}
               </span>
             </div>
             <div className="space-y-1 rounded-xl bg-[#f7faf7] p-1">
-              {(['high', 'medium', 'low'] as const).map((opt) => (
+              {(["high", "medium", "low"] as const).map((opt) => (
                 <button
                   key={opt}
                   type="button"
@@ -505,20 +561,20 @@ export function PriorityPicker({
                   aria-pressed={draftPriority === opt}
                   className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition ${
                     draftPriority === opt
-                      ? 'bg-[#4ade80] text-white shadow-sm'
-                      : 'text-[#617467] hover:bg-[#e3f8e8]'
+                      ? "bg-[#4ade80] text-white shadow-sm"
+                      : "text-[#617467] hover:bg-[#e3f8e8]"
                   }`}
                 >
                   <span>{priorityLabels[opt]}</span>
                   <span
                     className={`text-[8px] ${
                       draftPriority === opt
-                        ? 'text-white'
-                        : opt === 'high'
-                        ? 'text-red-500'
-                        : opt === 'medium'
-                        ? 'text-amber-500'
-                        : 'text-blue-500'
+                        ? "text-white"
+                        : opt === "high"
+                          ? "text-red-500"
+                          : opt === "medium"
+                            ? "text-amber-500"
+                            : "text-blue-500"
                     }`}
                   >
                     ●
@@ -530,7 +586,7 @@ export function PriorityPicker({
               <button
                 type="button"
                 onClick={() => {
-                  onChange('')
+                  onChange("")
                   setOpen(false)
                 }}
                 className="rounded-lg px-2 py-1.5 text-[10px] font-semibold text-[#78897d] transition hover:bg-[#fee2e2] hover:text-[#b94743]"
@@ -551,7 +607,7 @@ export function PriorityPicker({
               </button>
             </div>
           </div>,
-          document.body
+          document.body,
         )}
     </>
   )
@@ -568,22 +624,26 @@ export function QuickAddTask({
   onCancel: () => void
   onAdd: (draft: QuickTaskDraft) => Promise<boolean>
 }) {
-  const [title, setTitle] = useState('')
-  const [time, setTime] = useState('09:00')
+  const [title, setTitle] = useState("")
+  const [time, setTime] = useState("09:00")
   const [starred, setStarred] = useState(false)
-  const [description, setDescription] = useState('')
-  const [deadlineAt, setDeadlineAt] = useState('')
-  const [estimatedMinutes, setEstimatedMinutes] = useState('')
-  const [priority, setPriority] = useState<TaskPriority | ''>('')
-  const [categoryName, setCategoryName] = useState('')
+  const [description, setDescription] = useState("")
+  const [deadlineAt, setDeadlineAt] = useState("")
+  const [estimatedMinutes, setEstimatedMinutes] = useState("")
+  const [priority, setPriority] = useState<TaskPriority | "">("")
+  const [categoryName, setCategoryName] = useState("")
   const [submitting, setSubmitting] = useState(false)
-  const [validationError, setValidationError] = useState('')
-  const [clientRequestId, setClientRequestId] = useState(() => crypto.randomUUID())
-  const hasPastDeadline = Boolean(deadlineAt && new Date(deadlineAt).getTime() < Date.now())
+  const [validationError, setValidationError] = useState("")
+  const [clientRequestId, setClientRequestId] = useState(() =>
+    crypto.randomUUID(),
+  )
+  const hasPastDeadline = Boolean(
+    deadlineAt && new Date(deadlineAt).getTime() < Date.now(),
+  )
 
   function edit<T>(setter: (value: T) => void, value: T) {
     setter(value)
-    setValidationError('')
+    setValidationError("")
     if (!submitting) setClientRequestId(crypto.randomUUID())
   }
 
@@ -591,7 +651,7 @@ export function QuickAddTask({
     event.preventDefault()
     const cleanTitle = title.trim()
     if (!cleanTitle) {
-      setValidationError('Task title is required.')
+      setValidationError("Task title is required.")
       return
     }
     if (submitting) return
@@ -603,63 +663,141 @@ export function QuickAddTask({
         starred,
         description: description.trim(),
         deadlineAt,
-        estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : undefined,
+        estimatedMinutes: estimatedMinutes
+          ? Number(estimatedMinutes)
+          : undefined,
         priority: priority ? priority : undefined,
         categoryName: categoryName.trim(),
         clientRequestId,
       })
     } catch {
-      setValidationError('Could not save the task. Your entry is still here; try again.')
+      setValidationError(
+        "Could not save the task. Your entry is still here; try again.",
+      )
     } finally {
       setSubmitting(false)
     }
   }
 
-  return <form onSubmit={event => { void submit(event) }} className="mt-3 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-[#a9e9ba] bg-white p-2 shadow-sm">
-    <label className="mb-1.5 block px-1 text-[10px] font-bold text-[#4e8260]">NEW TASK · {day.toUpperCase()}</label>
-    <fieldset disabled={submitting} className="min-w-0 border-0 p-0">
-    <div className="w-full min-w-0 rounded-xl bg-white">
-      <input autoFocus required maxLength={200} value={title} onChange={event => edit(setTitle, event.target.value)} placeholder="Enter task name..." aria-label={`Task name for ${day}`} className="block h-9 w-full min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[11px] text-[#243c2d] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80] focus:ring-1 focus:ring-[#4ade80]/30" />
-      <textarea value={description} maxLength={5000} onChange={event => edit(setDescription, event.target.value)} placeholder="Description (optional)" aria-label="Task description" rows={2} className="mt-1.5 block w-full resize-y rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 py-1.5 text-[11px] text-[#243c2d] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80] focus:ring-1 focus:ring-[#4ade80]/30" />
-      <div className="mt-1.5 space-y-1.5">
-        <CategoryPicker value={categoryName} categories={categories} onChange={val => edit(setCategoryName, val)} />
-        <div className="grid grid-cols-2 gap-1.5">
-          <PriorityPicker value={priority} onChange={val => edit(setPriority, val)} />
+  return (
+    <form
+      onSubmit={(event) => {
+        void submit(event)
+      }}
+      className="mt-3 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-[#a9e9ba] bg-white p-2 shadow-sm"
+    >
+      <label className="mb-1.5 block px-1 text-[10px] font-bold text-[#4e8260]">
+        NEW TASK · {day.toUpperCase()}
+      </label>
+      <fieldset disabled={submitting} className="min-w-0 border-0 p-0">
+        <div className="w-full min-w-0 rounded-xl bg-white">
           <input
-            type="number"
-            min={1}
-            max={1440}
-            step={1}
-            value={estimatedMinutes}
-            onChange={event => edit(setEstimatedMinutes, event.target.value)}
-            placeholder="Minutes"
-            aria-label="Estimated minutes"
-            className="h-8 min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[10px] text-[#52665a] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80]"
+            autoFocus
+            required
+            maxLength={200}
+            value={title}
+            onChange={(event) => edit(setTitle, event.target.value)}
+            placeholder="Enter task name..."
+            aria-label={`Task name for ${day}`}
+            className="block h-9 w-full min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[11px] text-[#243c2d] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80] focus:ring-1 focus:ring-[#4ade80]/30"
           />
+          <textarea
+            value={description}
+            maxLength={5000}
+            onChange={(event) => edit(setDescription, event.target.value)}
+            placeholder="Description (optional)"
+            aria-label="Task description"
+            rows={2}
+            className="mt-1.5 block w-full resize-y rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 py-1.5 text-[11px] text-[#243c2d] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80] focus:ring-1 focus:ring-[#4ade80]/30"
+          />
+          <div className="mt-1.5 space-y-1.5">
+            <CategoryPicker
+              value={categoryName}
+              categories={categories}
+              onChange={(val) => edit(setCategoryName, val)}
+            />
+            <div className="grid grid-cols-2 gap-1.5">
+              <PriorityPicker
+                value={priority}
+                onChange={(val) => edit(setPriority, val)}
+              />
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                step={1}
+                value={estimatedMinutes}
+                onChange={(event) =>
+                  edit(setEstimatedMinutes, event.target.value)
+                }
+                placeholder="Minutes"
+                aria-label="Estimated minutes"
+                className="h-8 min-w-0 rounded-lg border border-[#edf2ed] bg-[#fbfdfb] px-2 text-[10px] text-[#52665a] outline-none placeholder:text-[#9aa99d] focus:border-[#4ade80]"
+              />
+            </div>
+          </div>
+          {hasPastDeadline && (
+            <p role="status" className="mt-1 px-1 text-[10px] text-amber-700">
+              This deadline is in the past. The task will be marked overdue
+              until you reschedule it.
+            </p>
+          )}
+          {validationError && (
+            <p role="alert" className="mt-1 px-1 text-[10px] text-[#b94743]">
+              {validationError}
+            </p>
+          )}
+          <div className="inline-time-picker-bar mt-1.5 flex w-full min-w-0 items-center justify-between gap-1">
+            <div className="flex items-center gap-1">
+              <InlineTimePicker
+                value={time}
+                onChange={(value) => edit(setTime, value)}
+              />
+              <button
+                type="button"
+                onClick={() => edit(setStarred, !starred)}
+                aria-label={
+                  starred ? "Remove star from new task" : "Star new task"
+                }
+                aria-pressed={starred}
+                title={starred ? "Starred task" : "Star this task"}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${
+                  starred
+                    ? "bg-[#fff7e0] text-[#f59e0b]"
+                    : "text-[#b5c2b7] hover:bg-[#fff9eb] hover:text-[#f59e0b]"
+                }`}
+              >
+                <Icon
+                  name="star"
+                  size={14}
+                  className={starred ? "fill-current" : ""}
+                />
+              </button>
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={submitting}
+                aria-label="Cancel new task"
+                title="Cancel"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#829087] transition hover:bg-[#fff0ef] hover:text-[#b94743] disabled:cursor-wait disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80]"
+              >
+                <Icon name="close" size={15} />
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                aria-label="Save new task"
+                title="Save task"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4ade80] text-white transition hover:bg-[#22c55e] disabled:cursor-wait disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#339e5e]"
+              >
+                <Icon name={submitting ? "clock" : "check"} size={16} />
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-      {hasPastDeadline && <p role="status" className="mt-1 px-1 text-[10px] text-amber-700">This deadline is in the past. The task will be marked overdue until you reschedule it.</p>}
-      {validationError && <p role="alert" className="mt-1 px-1 text-[10px] text-[#b94743]">{validationError}</p>}
-      <div className="inline-time-picker-bar mt-1.5 flex w-full min-w-0 items-center justify-between gap-1">
-        <div className="flex items-center gap-1">
-          <InlineTimePicker value={time} onChange={value => edit(setTime, value)} />
-          <button
-            type="button"
-            onClick={() => edit(setStarred, !starred)}
-            aria-label={starred ? 'Remove star from new task' : 'Star new task'}
-            aria-pressed={starred}
-            title={starred ? 'Starred task' : 'Star this task'}
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${starred ? 'bg-[#fff7e0] text-[#f59e0b]' : 'text-[#b5c2b7] hover:bg-[#fff9eb] hover:text-[#f59e0b]'}`}
-          >
-            <Icon name="star" size={14} className={starred ? 'fill-current' : ''} />
-          </button>
-        </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <button type="button" onClick={onCancel} disabled={submitting} aria-label="Cancel new task" title="Cancel" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#829087] transition hover:bg-[#fff0ef] hover:text-[#b94743] disabled:cursor-wait disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4ade80]"><Icon name="close" size={15} /></button>
-          <button type="submit" disabled={submitting} aria-label="Save new task" title="Save task" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4ade80] text-white transition hover:bg-[#22c55e] disabled:cursor-wait disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#339e5e]"><Icon name={submitting ? 'clock' : 'check'} size={16} /></button>
-        </div>
-      </div>
-    </div>
-    </fieldset>
-  </form>
+      </fieldset>
+    </form>
+  )
 }

@@ -1,15 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import * as api from '../api'
-import type { BreakdownItem, Category, DeletedTask, Habit, OverdueTask, SearchResult, Task, TaskPriority } from '../types'
-import { dateToWeekDay, dayToDate, localYmd, type Ymd } from '../utils/dates'
+import { useCallback, useEffect, useRef, useState } from "react"
+import * as api from "../api"
+import type {
+  BreakdownItem,
+  Category,
+  DeletedTask,
+  Habit,
+  OverdueTask,
+  SearchResult,
+  Task,
+  TaskPriority,
+} from "../types"
+import { dateToWeekDay, dayToDate, localYmd, type Ymd } from "../utils/dates"
 
-const HABIT_ORDER_KEY = 'focusflow.habitOrder'
+const HABIT_ORDER_KEY = "focusflow.habitOrder"
 
 // Thứ tự habit do người dùng kéo thả chỉ lưu trên máy này (BE không lưu thứ tự).
 function loadHabitOrder(): number[] {
   try {
-    const v: unknown = JSON.parse(localStorage.getItem(HABIT_ORDER_KEY) ?? '[]')
-    return Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : []
+    const v: unknown = JSON.parse(localStorage.getItem(HABIT_ORDER_KEY) ?? "[]")
+    return Array.isArray(v)
+      ? v.filter((x): x is number => typeof x === "number")
+      : []
   } catch {
     return []
   }
@@ -32,16 +43,16 @@ function applyHabitOrder(habits: Habit[]): Habit[] {
   return [...habits].sort((a, b) => rank(a.id) - rank(b.id) || a.id - b.id)
 }
 
-export type SignedOutReason = 'expired' | 'logout'
+export type SignedOutReason = "expired" | "logout"
 
 export type QuickTaskDraft = {
   title: string
   time: string
   starred: boolean
-  description: string
-  deadlineAt: string
+  description?: string
+  deadlineAt?: string
   estimatedMinutes?: number
-  priority: TaskPriority
+  priority?: TaskPriority
   categoryName: string
   clientRequestId: string
 }
@@ -61,12 +72,16 @@ function clientToday(): TodayState {
  * Giữ toàn bộ dữ liệu lấy từ BE cho màn hình chính và các thao tác ghi.
  * Trả về đúng những tên mà App.tsx đang dùng (tasksByWeek, getTaskDay, overdue, ...).
  */
-export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOutReason) => void) {
+export function useAppData(
+  searchQuery: string,
+  onSignedOut?: (reason: SignedOutReason) => void,
+) {
   const [today, setToday] = useState<TodayState>(clientToday)
   const [weekOffset, setWeekOffset] = useState<number>(() => clientToday().week)
   const [tasksByWeek, setTasksByWeek] = useState<Record<number, Task[]>>({})
   const [dayById, setDayById] = useState<Record<number, number>>({})
-  const [habitsByWeek, setHabitsByWeek] = useState<Record<number, Record<number, boolean[]>>>({})
+  const [habitsByWeek, setHabitsByWeek] =
+    useState<Record<number, Record<number, boolean[]>>>({})
   const [habitDefinitions, setHabitDefinitions] = useState<Habit[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [overdue, setOverdue] = useState<OverdueTask[]>([])
@@ -75,20 +90,38 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   const [matchingTasks, setMatchingTasks] = useState<SearchResult[]>([])
   const [me, setMe] = useState<api.UserInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pendingTaskIds, setPendingTaskIds] = useState<Set<number>>(() => new Set())
+  const [pendingTaskIds, setPendingTaskIds] = useState<Set<number>>(
+    () => new Set(),
+  )
   const pendingTaskIdsRef = useRef<Set<number>>(new Set())
 
   const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadSeq = useRef<Record<number, number>>({})
   // Bản sao state mới nhất cho các hàm xử lý sự kiện (tránh dữ liệu cũ trong closure)
-  const live = useRef({ today, weekOffset, tasksByWeek, habitsByWeek, overdue, undoItem, dayById })
+  const live = useRef({
+    today,
+    weekOffset,
+    tasksByWeek,
+    habitsByWeek,
+    overdue,
+    undoItem,
+    dayById,
+  })
   useEffect(() => {
-    live.current = { today, weekOffset, tasksByWeek, habitsByWeek, overdue, undoItem, dayById }
+    live.current = {
+      today,
+      weekOffset,
+      tasksByWeek,
+      habitsByWeek,
+      overdue,
+      undoItem,
+      dayById,
+    }
   })
 
   const fail = useCallback((e: unknown) => {
     if (e instanceof api.ApiError && e.status === 401) return // đã được xử lý bởi onSignedOut
-    setError(e instanceof Error ? e.message : 'Đã xảy ra lỗi')
+    setError(e instanceof Error ? e.message : "Đã xảy ra lỗi")
   }, [])
 
   const clearError = useCallback(() => setError(null), [])
@@ -100,7 +133,7 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   }, [error])
 
   useEffect(() => {
-    api.setUnauthorizedHandler(() => onSignedOut?.('expired'))
+    api.setUnauthorizedHandler(() => onSignedOut?.("expired"))
     return () => api.setUnauthorizedHandler(null)
   }, [onSignedOut])
 
@@ -119,26 +152,35 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
     })
   }, [])
 
-  const getTaskDay = useCallback((id: number): number => dayById[id] ?? 0, [dayById])
+  const getTaskDay = useCallback(
+    (id: number): number => dayById[id] ?? 0,
+    [dayById],
+  )
 
   // ---------------------------------------------------------------- tải dữ liệu
 
-  const loadWeek = useCallback(async (week: number, generate = true): Promise<void> => {
-    const n = (loadSeq.current[week] = (loadSeq.current[week] ?? 0) + 1)
-    const d = await api.getWeek(week, { generate })
-    if (loadSeq.current[week] !== n) return // đã có lần tải mới hơn
-    const flat: Task[] = []
-    const positions: Record<number, number> = {}
-    d.tasksByDay.forEach((list, day) =>
-      list.forEach((t) => {
-        flat.push(t)
-        positions[t.id] = day
-      }),
-    )
-    setTasksByWeek((c) => ({ ...c, [week]: flat }))
-    setDayById((c) => ({ ...c, ...positions }))
-    setHabitsByWeek((c) => ({ ...c, [week]: Object.fromEntries(d.habits.map((h) => [h.id, h.logs])) }))
-  }, [])
+  const loadWeek = useCallback(
+    async (week: number, generate = true): Promise<void> => {
+      const n = (loadSeq.current[week] = (loadSeq.current[week] ?? 0) + 1)
+      const d = await api.getWeek(week, { generate })
+      if (loadSeq.current[week] !== n) return // đã có lần tải mới hơn
+      const flat: Task[] = []
+      const positions: Record<number, number> = {}
+      d.tasksByDay.forEach((list, day) =>
+        list.forEach((t) => {
+          flat.push(t)
+          positions[t.id] = day
+        }),
+      )
+      setTasksByWeek((c) => ({ ...c, [week]: flat }))
+      setDayById((c) => ({ ...c, ...positions }))
+      setHabitsByWeek((c) => ({
+        ...c,
+        [week]: Object.fromEntries(d.habits.map((h) => [h.id, h.logs])),
+      }))
+    },
+    [],
+  )
 
   const refreshOverdue = useCallback(async (): Promise<void> => {
     const items = await api.getOverdue()
@@ -193,7 +235,11 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
       setMe(user)
       setToday({ date: t.date, week: t.week, day: t.day })
       setWeekOffset((w) => (w === clientToday().week ? t.week : w))
-      await Promise.all([refreshHabits(), refreshCategories(), refreshOverdue()])
+      await Promise.all([
+        refreshHabits(),
+        refreshCategories(),
+        refreshOverdue(),
+      ])
     })
   }, [run, refreshHabits, refreshCategories, refreshOverdue])
 
@@ -209,19 +255,20 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
       const prev = live.current.today
       if (t.date === prev.date) return
       setToday({ date: t.date, week: t.week, day: t.day })
-      if (live.current.weekOffset === prev.week && t.week !== prev.week) setWeekOffset(t.week)
+      if (live.current.weekOffset === prev.week && t.week !== prev.week)
+        setWeekOffset(t.week)
       else await loadWeek(live.current.weekOffset, true)
       await refreshOverdue()
     }
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void run(check)
+      if (document.visibilityState === "visible") void run(check)
     }
     const onFocus = () => void run(check)
-    document.addEventListener('visibilitychange', onVisible)
-    window.addEventListener('focus', onFocus)
+    document.addEventListener("visibilitychange", onVisible)
+    window.addEventListener("focus", onFocus)
     return () => {
-      document.removeEventListener('visibilitychange', onVisible)
-      window.removeEventListener('focus', onFocus)
+      document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener("focus", onFocus)
     }
   }, [run, loadWeek, refreshOverdue])
 
@@ -254,11 +301,18 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   // ---------------------------------------------------------------- thao tác task
 
   const replaceTask = useCallback((week: number, task: Task) => {
-    setTasksByWeek((c) => ({ ...c, [week]: (c[week] ?? []).map((t) => (t.id === task.id ? task : t)) }))
+    setTasksByWeek((c) => ({
+      ...c,
+      [week]: (c[week] ?? []).map((t) => (t.id === task.id ? task : t)),
+    }))
   }, [])
 
   const patchTask = useCallback(
-    async (id: number, optimistic: Partial<Task>, patch: api.UpdateTaskInput): Promise<void> => {
+    async (
+      id: number,
+      optimistic: Partial<Task>,
+      patch: api.UpdateTaskInput,
+    ): Promise<void> => {
       const week = live.current.weekOffset
       const original = live.current.tasksByWeek[week]?.find((t) => t.id === id)
       if (!original) return
@@ -266,7 +320,11 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
         const day = live.current.dayById[id] ?? 0
         const taskDate = dayToDate(week, day)
         if (taskDate < live.current.today.date) {
-          fail(new Error('Không thể thay đổi trạng thái hoàn thành của công việc trong quá khứ'))
+          fail(
+            new Error(
+              "Không thể thay đổi trạng thái hoàn thành của công việc trong quá khứ",
+            ),
+          )
           return
         }
       }
@@ -276,7 +334,9 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
         replaceTask(week, r.task)
         if (patch.done !== undefined) {
           await Promise.all([
-            original.autoHabitId !== undefined ? loadWeek(week, false) : Promise.resolve(),
+            original.autoHabitId !== undefined
+              ? loadWeek(week, false)
+              : Promise.resolve(),
             refreshOverdue(),
           ])
         }
@@ -291,12 +351,18 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   const toggleTask = useCallback(
     async (id: number) => {
       if (pendingTaskIdsRef.current.has(id)) return
-      const task = live.current.tasksByWeek[live.current.weekOffset]?.find((t) => t.id === id)
+      const task = live.current.tasksByWeek[live.current.weekOffset]?.find(
+        (t) => t.id === id,
+      )
       if (!task) return
       const day = live.current.dayById[id] ?? 0
       const taskDate = dayToDate(live.current.weekOffset, day)
       if (taskDate < live.current.today.date) {
-        fail(new Error('Không thể thay đổi trạng thái hoàn thành của công việc trong quá khứ'))
+        fail(
+          new Error(
+            "Không thể thay đổi trạng thái hoàn thành của công việc trong quá khứ",
+          ),
+        )
         return
       }
       pendingTaskIdsRef.current.add(id)
@@ -322,7 +388,9 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
 
   const toggleTaskStar = useCallback(
     (id: number) => {
-      const task = live.current.tasksByWeek[live.current.weekOffset]?.find((t) => t.id === id)
+      const task = live.current.tasksByWeek[live.current.weekOffset]?.find(
+        (t) => t.id === id,
+      )
       if (!task) return
       void patchTask(id, { starred: !task.starred }, { starred: !task.starred })
     },
@@ -330,13 +398,24 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   )
 
   const addTask = useCallback(
-    (day: number, draft: QuickTaskDraft): Promise<boolean> =>
+    (day: number, draft: QuickTaskDraft, targetWeek?: number): Promise<boolean> =>
       run(async () => {
-        const week = live.current.weekOffset
+        const week = targetWeek !== undefined ? targetWeek : live.current.weekOffset
+        const taskDate = dayToDate(week, day)
+        if (taskDate < live.current.today.date) {
+          fail(new Error("Không thể tạo công việc cho ngày trong quá khứ"))
+          return
+        }
         const categoryName = draft.categoryName.trim()
-        const category = categoryName ? await api.createCategory(categoryName) : undefined
+        const category = categoryName
+          ? await api.createCategory(categoryName)
+          : undefined
         if (category && !categories.some((item) => item.id === category.id)) {
-          setCategories((current) => current.some((item) => item.id === category.id) ? current : [...current, category])
+          setCategories((current) =>
+            current.some((item) => item.id === category.id)
+              ? current
+              : [...current, category],
+          )
         }
         await api.createTask({
           week,
@@ -351,7 +430,11 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
           categoryId: category?.id,
           clientRequestId: draft.clientRequestId,
         })
-        await Promise.all([loadWeek(week, false), refreshOverdue(), refreshCategories()])
+        await Promise.all([
+          loadWeek(week, false),
+          refreshOverdue(),
+          refreshCategories(),
+        ])
       }),
     [run, loadWeek, refreshOverdue, refreshCategories, categories],
   )
@@ -381,7 +464,9 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
         } catch (err) {
           // Fallback nếu BE chưa bật route /ai/priority-confirm: gọi PATCH từng task
           if (err instanceof api.ApiError && err.status === 404) {
-            await Promise.all(taskIds.map((id) => api.updateTask(id, { starred: true })))
+            await Promise.all(
+              taskIds.map((id) => api.updateTask(id, { starred: true })),
+            )
           } else {
             throw err
           }
@@ -392,11 +477,21 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   )
 
   const moveTask = useCallback(
-    (sourceWeek: number, id: number, targetWeek: number, targetDay: number): Promise<boolean> =>
+    (
+      sourceWeek: number,
+      id: number,
+      targetWeek: number,
+      targetDay: number,
+    ): Promise<boolean> =>
       run(async () => {
-        const r = await api.updateTask(id, { move: { week: targetWeek, day: targetDay } })
+        const r = await api.updateTask(id, {
+          move: { week: targetWeek, day: targetDay },
+        })
         remember([{ task: r.task, day: r.day }])
-        setTasksByWeek((c) => ({ ...c, [sourceWeek]: (c[sourceWeek] ?? []).filter((t) => t.id !== id) }))
+        setTasksByWeek((c) => ({
+          ...c,
+          [sourceWeek]: (c[sourceWeek] ?? []).filter((t) => t.id !== id),
+        }))
         setWeekOffset(targetWeek)
         await Promise.all([
           loadWeek(targetWeek, false),
@@ -415,7 +510,10 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
         const r = await api.carryOver()
         remember(r.tasks.map((t) => ({ task: t.task, day: t.day })))
         const cur = live.current.today.week
-        const weeks = new Set<number>([cur, ...Object.keys(live.current.tasksByWeek).map(Number)])
+        const weeks = new Set<number>([
+          cur,
+          ...Object.keys(live.current.tasksByWeek).map(Number),
+        ])
         setWeekOffset(cur)
         await Promise.all([...weeks].map((w) => loadWeek(w, false)))
         await refreshOverdue()
@@ -429,7 +527,8 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
     async (week: number, id: number): Promise<void> => {
       const task =
         live.current.tasksByWeek[week]?.find((t) => t.id === id) ??
-        live.current.overdue.find((o) => o.week === week && o.task.id === id)?.task
+        live.current.overdue.find((o) => o.week === week && o.task.id === id)
+          ?.task
       if (!task) return
       const day = live.current.dayById[id] ?? 0
       try {
@@ -439,7 +538,10 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
         return
       }
       const removed: DeletedTask = { task, week, day, deletedAt: Date.now() }
-      setTasksByWeek((c) => ({ ...c, [week]: (c[week] ?? []).filter((t) => t.id !== id) }))
+      setTasksByWeek((c) => ({
+        ...c,
+        [week]: (c[week] ?? []).filter((t) => t.id !== id),
+      }))
       setOverdue((c) => c.filter((o) => o.task.id !== id))
       setDeletedTasks((c) => [...c, removed])
       if (undoTimeout.current) clearTimeout(undoTimeout.current)
@@ -497,7 +599,7 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
     async (habitId: number, dayIndex: number): Promise<void> => {
       const { weekOffset: w, today: t, habitsByWeek: hw } = live.current
       if (w !== t.week || dayIndex !== t.day) {
-        setError('Chỉ có thể ghi nhận thói quen của ngày hôm nay')
+        setError("Chỉ có thể ghi nhận thói quen của ngày hôm nay")
         return
       }
       const row = hw[w]?.[habitId] ?? Array<boolean>(7).fill(false)
@@ -505,7 +607,10 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
       const setRow = (value: boolean) =>
         setHabitsByWeek((c) => ({
           ...c,
-          [w]: { ...(c[w] ?? {}), [habitId]: row.map((x, d) => (d === dayIndex ? value : x)) },
+          [w]: {
+            ...(c[w] ?? {}),
+            [habitId]: row.map((x, d) => (d === dayIndex ? value : x)),
+          },
         }))
       setRow(next)
       try {
@@ -520,7 +625,7 @@ export function useAppData(searchQuery: string, onSignedOut?: (reason: SignedOut
   )
 
   const addHabit = useCallback(
-    (habit: Omit<Habit, 'id'>): Promise<boolean> =>
+    (habit: Omit<Habit, "id">): Promise<boolean> =>
       run(async () => {
         const h = await api.createHabit({ ...habit, title: habit.title.trim() })
         const order = loadHabitOrder()

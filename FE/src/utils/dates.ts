@@ -1,9 +1,9 @@
-import { WEEK_ANCHOR_MONDAY } from './week'
+import { WEEK_ANCHOR_MONDAY } from "./week"
 
 // Ngày được biểu diễn bằng chuỗi 'YYYY-MM-DD' và tính bằng UTC, nên không bao giờ lệch ngày do múi giờ.
 export type Ymd = string
 
-const pad = (n: number): string => String(n).padStart(2, '0')
+const pad = (n: number): string => String(n).padStart(2, "0")
 
 /** Ngày địa phương của một Date -> 'YYYY-MM-DD' */
 export function localYmd(d: Date = new Date()): Ymd {
@@ -15,7 +15,7 @@ export const BASE_MONDAY: Ymd = localYmd(WEEK_ANCHOR_MONDAY)
 
 const MS_DAY = 86_400_000
 export function parseYmd(s: Ymd): number {
-  const [y, m, d] = s.split('-').map(Number)
+  const [y, m, d] = s.split("-").map(Number)
   return Date.UTC(y, m - 1, d)
 }
 
@@ -65,6 +65,6 @@ export function dateToWeekDay(s: Ymd): { week: number; day: number } {
 
 /** 'YYYY-MM-DD' -> Date ở 00:00 giờ địa phương (dùng để hiển thị) */
 export function ymdToLocalDate(s: Ymd): Date {
-  const [y, m, d] = s.split('-').map(Number)
+  const [y, m, d] = s.split("-").map(Number)
   return new Date(y, m - 1, d)
 }
