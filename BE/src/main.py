@@ -48,6 +48,17 @@ app.include_router(reminders.router)
 app.include_router(ai.router)
 
 
+@app.get("/", tags=["meta"])
+async def root():
+    return {
+        "name": "FocusFlow AI API",
+        "status": "online",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
 @app.get("/health", tags=["meta"])
 async def health():
     return {"status": "ok"}
