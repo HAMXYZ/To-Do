@@ -25,26 +25,36 @@ let backendProcess = null
 
 // Tự động kiểm tra và khởi động Backend nếu chưa chạy
 async function ensureBackendRunning() {
-  const isAlive = await pingServer("http://localhost:8000/health")
-  if (isAlive) {
-    console.log("[Electron] Backend đã sẵn sàng tại http://localhost:8000")
-    return
-  }
-
-  const bePath = path.resolve(__dirname, "../../BE")
   const beExe = path.join(process.resourcesPath || "", "backend", "focusflow-backend.exe")
 
-  if (fs.existsSync(beExe)) {
-    console.log("[Electron] Khởi động backend exe đóng gói:", beExe)
-    backendProcess = spawn(beExe, [], { stdio: "ignore", windowsHide: true })
-  } else if (fs.existsSync(bePath)) {
-    console.log("[Electron] Khởi động backend Python:", bePath)
-    backendProcess = spawn("python", ["-m", "uvicorn", "src.main:app", "--port", "8000"], {
-      cwd: bePath,
-      stdio: "ignore",
-      windowsHide: true,
-      env: { ...process.env, PYTHONPATH: bePath },
-    })
+  if (app.isPackaged) {
+    if (fs.existsSync(beExe)) {
+      console.log("[Electron] Khởi động backend exe đóng gói:", beExe)
+      backendProcess = spawn(beExe, [], { stdio: "ignore", windowsHide: true })
+    } else {
+      console.log("[Electron] Chạy chế độ đóng gói với Backend cấu hình độc lập/từ xa.")
+      return
+    }
+  } else {
+    const isAlive = await pingServer("http://localhost:8000/health")
+    if (isAlive) {
+      console.log("[Electron] Backend đã sẵn sàng tại http://localhost:8000")
+      return
+    }
+
+    const bePath = path.resolve(__dirname, "../../BE")
+    if (fs.existsSync(beExe)) {
+      console.log("[Electron] Khởi động backend exe đóng gói:", beExe)
+      backendProcess = spawn(beExe, [], { stdio: "ignore", windowsHide: true })
+    } else if (fs.existsSync(bePath)) {
+      console.log("[Electron] Khởi động backend Python:", bePath)
+      backendProcess = spawn("python", ["-m", "uvicorn", "src.main:app", "--port", "8000"], {
+        cwd: bePath,
+        stdio: "ignore",
+        windowsHide: true,
+        env: { ...process.env, PYTHONPATH: bePath },
+      })
+    }
   }
 
   if (backendProcess) {

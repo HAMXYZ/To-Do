@@ -2,6 +2,7 @@
   "name": "focusflow-ai",
   "productName": "FocusFlow AI",
   "description": "FocusFlow AI - Ứng dụng quản lý công việc và thói quen thông minh",
+  "author": "FocusFlow Team",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -13,6 +14,9 @@
     "api": "node --watch server/index.js",
     "db:migrate": "node server/migrate.js",
     "build": "vite build",
+    "package": "vite build && electron-builder",
+    "package:dir": "vite build && electron-builder --dir",
+    "package:portable": "vite build && electron-builder --win portable",
     "preview": "vite preview",
     "format": "oxfmt"
   },
@@ -31,9 +35,46 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
     "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "oxfmt": "^0.2.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
     "vite": "^8.0.5"
+  },
+  "build": {
+    "appId": "com.focusflow.ai",
+    "productName": "FocusFlow AI",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FocusFlow AI"
+    }
   }
 }

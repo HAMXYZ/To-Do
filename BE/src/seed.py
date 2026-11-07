@@ -589,6 +589,9 @@ async def main():
             email = arg
 
     print(f"=== Đang nạp dữ liệu mẫu FocusFlow AI (force={force}, email={email}) ===")
+    from src.models import Base
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     results = await seed_database(force=force, target_email=email)
     for r in results:
         print(r)

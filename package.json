@@ -1,4 +1,13 @@
 {
+  "name": "focusflow-workspace",
+  "private": true,
+  "scripts": {
+    "package": "npm --prefix FE run package",
+    "package:dir": "npm --prefix FE run package:dir",
+    "package:portable": "npm --prefix FE run package:portable",
+    "desktop": "npm --prefix FE run desktop",
+    "build:fe": "npm --prefix FE run build"
+  },
   "devDependencies": {
     "supabase": "^3.0.0"
   }

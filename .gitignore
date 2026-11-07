@@ -15,4 +15,6 @@ node_modules/
 
 # Build files
 dist/
+release/
+FE/release/
 .next/
