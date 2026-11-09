@@ -7,9 +7,12 @@ from src.ai_service import AIServiceError
 from src.routers.ai import (
     AIAssistantIn,
     AIAssistantOut,
+    AITranscribeIn,
+    AITranscribeOut,
     AssistantAction,
     AssistantActionTask,
     ask_ai_assistant,
+    transcribe_audio_endpoint,
 )
 
 
@@ -239,5 +242,34 @@ def test_ai_assistant_auto_computes_date_for_passed_day_in_week():
         # Vì Thứ Ba tuần này đã qua so với Thứ Bảy 07/11, phải tự chọn Thứ Ba tuần tới (2026-11-10)
         assert res.action.task.date == "2026-11-10"
         assert res.action.task.day == 1
+
+
+def test_transcribe_audio_endpoint_success():
+    user = MagicMock()
+    user.id = 106
+    response = Response()
+    body = AITranscribeIn(
+        audio_base64="GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwEAAAA=",
+        mime_type="audio/webm",
+    )
+
+    with patch("src.routers.ai.transcribe_audio") as mock_transcribe:
+        async def mock_call(*args, **kwargs):
+            return "Họp nhóm đồ án", "google_ai", {"limit": 10, "remaining": 9, "reset_in_seconds": 600}
+
+        mock_transcribe.side_effect = mock_call
+
+        coro = transcribe_audio_endpoint(body, response, user=user)
+        try:
+            coro.send(None)
+        except StopIteration as e:
+            res = e.value
+
+        assert isinstance(res, AITranscribeOut)
+        assert res.text == "Họp nhóm đồ án"
+        assert res.provider == "google_ai"
+        assert response.headers["X-RateLimit-Limit"] == "10"
+        assert response.headers["X-RateLimit-Remaining"] == "9"
+
 
 

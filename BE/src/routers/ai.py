@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.ai_service import AIServiceError, generate_json, get_ai_quota
+from src.ai_service import AIServiceError, generate_json, get_ai_quota, transcribe_audio
 from src.db import get_session
 from src.deps import get_current_user
 from src.models import User
@@ -317,6 +317,55 @@ async def ask_ai_assistant(
         raise HTTPException(status_code=exc.status_code, detail=detail, headers=headers) from exc
     except ValidationError as exc:
         raise HTTPException(502, "Trợ lý AI trả về dữ liệu không đúng cấu trúc yêu cầu. Hãy thử lại.") from exc
+
+
+class AITranscribeIn(BaseModel):
+    audio_base64: str = Field(min_length=10)
+    mime_type: str = "audio/webm"
+
+    @field_validator("audio_base64")
+    @classmethod
+    def clean_base64(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Dữ liệu âm thanh không được để trống.")
+        return value
+
+
+class AITranscribeOut(BaseModel):
+    text: str
+    provider: str
+
+
+@router.post("/transcribe", response_model=AITranscribeOut)
+async def transcribe_audio_endpoint(
+    body: AITranscribeIn,
+    response: Response,
+    user: User = Depends(get_current_user),
+):
+    """Nhận diện giọng nói từ dữ liệu âm thanh ghi âm (Hỗ trợ Electron Desktop & Web)."""
+    try:
+        text, provider, quota_info = await transcribe_audio(
+            user.id, body.audio_base64, body.mime_type
+        )
+        response.headers["X-RateLimit-Limit"] = str(quota_info["limit"])
+        response.headers["X-RateLimit-Remaining"] = str(quota_info["remaining"])
+        response.headers["X-RateLimit-Reset"] = str(quota_info["reset_in_seconds"])
+        return AITranscribeOut(text=text, provider=provider)
+    except AIServiceError as exc:
+        headers: dict[str, str] = {}
+        if exc.retry_after is not None:
+            headers["Retry-After"] = str(exc.retry_after)
+        if exc.details.get("limit") is not None:
+            headers["X-RateLimit-Limit"] = str(exc.details["limit"])
+            headers["X-RateLimit-Remaining"] = str(exc.details.get("remaining", 0))
+            headers["X-RateLimit-Reset"] = str(exc.details.get("reset_in_seconds", 0))
+        detail = {
+            "code": exc.code,
+            "message": exc.message,
+            "retry_after": exc.retry_after,
+        }
+        raise HTTPException(status_code=exc.status_code, detail=detail, headers=headers) from exc
 
 
 # ===========================================================================

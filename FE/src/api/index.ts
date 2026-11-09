@@ -1050,6 +1050,18 @@ export async function askAssistant(
   }
 }
 
+export async function transcribeAudio(
+  audioBase64: string,
+  mimeType: string = "audio/webm",
+): Promise<{ text: string; provider: string }> {
+  return request<{ text: string; provider: string }>("POST", "/ai/transcribe", {
+    body: {
+      audio_base64: audioBase64,
+      mime_type: mimeType,
+    },
+  })
+}
+
 export interface HabitRecognitionSuggestion {
   title: string
   frequency: "daily" | "weekdays" | "custom"

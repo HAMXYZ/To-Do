@@ -187,3 +187,144 @@ async def generate_json(user_id: int, system: str, payload: dict) -> tuple[dict,
     )
     provider = urlparse(base_url).netloc
     return result, provider, quota_info
+
+
+def _request_transcribe(
+    api_key: str, base_url: str, model: str, timeout: int, audio_bytes_b64: str, mime_type: str
+) -> str:
+    if "," in audio_bytes_b64:
+        audio_bytes_b64 = audio_bytes_b64.split(",", 1)[1]
+    audio_bytes_b64 = audio_bytes_b64.strip()
+    clean_mime = mime_type.split(";")[0].strip() or "audio/webm"
+
+    # 1. Google Generative Language API
+    if "generativelanguage.googleapis.com" in base_url or api_key.startswith("AIza") or api_key.startswith("AQ."):
+        candidate_models = [model]
+        for fallback_m in ("gemini-2.0-flash", "gemini-1.5-flash"):
+            if fallback_m not in candidate_models:
+                candidate_models.append(fallback_m)
+
+        last_error = None
+        for m in candidate_models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
+            req_body = json.dumps({
+                "contents": [{
+                    "parts": [
+                        {
+                            "inlineData": {
+                                "mimeType": clean_mime,
+                                "data": audio_bytes_b64,
+                            }
+                        },
+                        {
+                            "text": "Hãy lắng nghe đoạn âm thanh này và chép lại chính xác từng từ ngữ người nói thành văn bản tiếng Việt. Chỉ trả về nội dung người nói, tuyệt đối không thêm lời chào, giải thích, dấu ngoặc kép hay bất kỳ ký tự nào khác."
+                        }
+                    ]
+                }],
+                "generationConfig": {
+                    "temperature": 0.0
+                }
+            }).encode("utf-8")
+
+            req = Request(
+                url,
+                data=req_body,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key,
+                },
+                method="POST",
+            )
+            try:
+                with urlopen(req, timeout=timeout) as response:
+                    raw = response.read(_MAX_RESPONSE_BYTES + 1)
+                    envelope = json.loads(raw.decode("utf-8"))
+                    candidates = envelope.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            text = parts[0].get("text", "").strip()
+                            if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+                                text = text[1:-1].strip()
+                            return text
+            except HTTPError as exc:
+                last_error = exc
+                if exc.code == 404:
+                    continue
+                err_body = ""
+                try:
+                    err_body = exc.read().decode("utf-8", errors="ignore")
+                except Exception:
+                    pass
+                if exc.code == 429:
+                    raise AIServiceError(
+                        429,
+                        "Nhà cung cấp AI (Google AI) đang tạm thời hết hạn mức. Vui lòng thử lại sau.",
+                        code="PROVIDER_QUOTA_EXCEEDED",
+                        retry_after=60,
+                    ) from exc
+                if exc.code in (401, 403) or "API key" in err_body or "API_KEY" in err_body:
+                    raise AIServiceError(503, "Khóa AI (AI_API_KEY) không hợp lệ hoặc bị từ chối.") from exc
+                raise AIServiceError(502, "Nhà cung cấp AI chưa thể xử lý dữ liệu âm thanh.") from exc
+            except (TimeoutError, asyncio.TimeoutError) as exc:
+                raise AIServiceError(504, "Yêu cầu nhận diện giọng nói đã quá thời gian chờ.") from exc
+            except URLError as exc:
+                raise AIServiceError(502, "Không kết nối được dịch vụ nhận diện giọng nói.") from exc
+
+        if last_error:
+            raise AIServiceError(502, "Không tìm thấy mô hình AI phù hợp để xử lý âm thanh.")
+        return ""
+
+    # 2. OpenAI-compatible fallback
+    req_body = json.dumps({
+        "model": model,
+        "temperature": 0.0,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Hãy lắng nghe đoạn âm thanh này và chép lại chính xác từng từ ngữ người nói thành văn bản tiếng Việt. Chỉ trả về nội dung người nói."
+                    },
+                    {
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": audio_bytes_b64,
+                            "format": "wav" if "wav" in clean_mime else "mp3"
+                        }
+                    }
+                ]
+            }
+        ]
+    }).encode("utf-8")
+    req = Request(
+        f"{base_url}/chat/completions",
+        data=req_body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=timeout) as response:
+            raw = response.read(_MAX_RESPONSE_BYTES + 1)
+            envelope = json.loads(raw.decode("utf-8"))
+            text = envelope["choices"][0]["message"]["content"].strip()
+            if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+                text = text[1:-1].strip()
+            return text
+    except Exception as exc:
+        raise AIServiceError(502, "Không thể nhận diện giọng nói qua nhà cung cấp AI.") from exc
+
+
+async def transcribe_audio(user_id: int, audio_base64: str, mime_type: str = "audio/webm") -> tuple[str, str, dict]:
+    api_key, base_url, model, timeout = _settings()
+    quota_info = _reserve_request(user_id)
+    text = await asyncio.to_thread(
+        _request_transcribe, api_key, base_url, model, timeout, audio_base64, mime_type
+    )
+    provider = urlparse(base_url).netloc or "google_ai"
+    return text, provider, quota_info

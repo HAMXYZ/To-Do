@@ -308,6 +308,33 @@ export function AIBreakdownModal({
   const [isSaving, setIsSaving] = useState(false)
   const [voiceMessage, setVoiceMessage] = useState("")
   const [isListening, setIsListening] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const recognitionRef = useRef<any>(null)
+
+  useEffect(() => {
+    return () => {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try {
+          mediaRecorderRef.current.stop()
+        } catch {
+          /* ignore */
+        }
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop()
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -327,7 +354,131 @@ export function AIBreakdownModal({
     return safeInitialDay
   }
 
+  async function startAudioRecordingBreakdown() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setVoiceMessage("Microphone không được hỗ trợ trên thiết bị này.")
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStreamRef.current = stream
+      audioChunksRef.current = []
+
+      let mimeType = "audio/webm"
+      if (typeof MediaRecorder !== "undefined") {
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          mimeType = "audio/webm;codecs=opus"
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = "audio/webm"
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          mimeType = "audio/mp4"
+        }
+      }
+
+      const recorder = new MediaRecorder(stream, { mimeType })
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.onstop = async () => {
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop())
+          mediaStreamRef.current = null
+        }
+
+        const chunks = audioChunksRef.current
+        audioChunksRef.current = []
+
+        if (chunks.length === 0) {
+          setIsListening(false)
+          return
+        }
+
+        const audioBlob = new Blob(chunks, { type: mimeType })
+        if (audioBlob.size < 600) {
+          setIsListening(false)
+          setVoiceMessage("Đoạn ghi âm quá ngắn hoặc chưa có tiếng nói. Hãy thử lại.")
+          return
+        }
+
+        setIsListening(false)
+        setVoiceMessage("Đang nhận diện giọng nói qua AI...")
+
+        try {
+          const reader = new FileReader()
+          reader.onloadend = async () => {
+            try {
+              const base64Audio = reader.result as string
+              const res = await api.transcribeAudio(base64Audio, mimeType)
+              if (res.text && res.text.trim()) {
+                setPrompt(res.text.trim())
+                setPromptError(null)
+                setVoiceMessage(
+                  'Đã nhận giọng nói. Bấm "Xác nhận & Phân rã công việc" để tạo các bước.',
+                )
+              } else {
+                setVoiceMessage(
+                  "Không nghe rõ âm thanh. Hãy thử nói lại hoặc gõ trực tiếp.",
+                )
+              }
+            } catch (err: any) {
+              setVoiceMessage(
+                err?.message ||
+                  "Lỗi khi nhận diện giọng nói. Bạn có thể nhập liệu bằng văn bản.",
+              )
+            }
+          }
+          reader.readAsDataURL(audioBlob)
+        } catch {
+          setVoiceMessage("Lỗi khi xử lý âm thanh. Bạn có thể nhập liệu bằng văn bản.")
+        }
+      }
+
+      recorder.start(250)
+      setIsListening(true)
+      setVoiceMessage("Đang nghe... Hãy đọc mô tả công việc (Bấm lại nút Micro khi nói xong)")
+    } catch (err: any) {
+      setIsListening(false)
+      if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+        setVoiceMessage("⚠️ Quyền truy cập microphone bị từ chối. Vui lòng cấp quyền micro trong cài đặt hệ thống.")
+      } else {
+        setVoiceMessage("Không thể bật micro: " + (err?.message || "Kiểm tra thiết bị thu âm."))
+      }
+    }
+  }
+
   function startVoiceEntry() {
+    if (isListening) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop()
+        return
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop()
+        } catch {
+          /* ignore */
+        }
+      }
+      setIsListening(false)
+      return
+    }
+
+    const isElectron =
+      typeof window !== "undefined" &&
+      (Boolean((window as any).electronAPI) ||
+        navigator.userAgent.toLowerCase().includes("electron"))
+
+    if (isElectron) {
+      startAudioRecordingBreakdown()
+      return
+    }
+
     const win = window as typeof window & {
       SpeechRecognition?: any
       webkitSpeechRecognition?: any
@@ -335,12 +486,12 @@ export function AIBreakdownModal({
     const SpeechRecognition =
       win.SpeechRecognition || win.webkitSpeechRecognition
     if (!SpeechRecognition) {
-      setVoiceMessage(
-        "Trình duyệt không hỗ trợ nhập giọng nói. Vui lòng nhập văn bản.",
-      )
+      startAudioRecordingBreakdown()
       return
     }
+
     const recognition = new SpeechRecognition()
+    recognitionRef.current = recognition
     recognition.lang = "vi-VN"
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript
@@ -353,8 +504,13 @@ export function AIBreakdownModal({
     recognition.onerror = (event: any) => {
       setIsListening(false)
       if (event?.error === "network") {
+        startAudioRecordingBreakdown()
+      } else if (
+        event?.error === "not-allowed" ||
+        event?.error === "service-not-allowed"
+      ) {
         setVoiceMessage(
-          "Dịch vụ giọng nói Google bị chặn mạng trong Electron Desktop. Bạn có thể mở web trên Chrome để nói hoặc gõ văn bản.",
+          "⚠️ Quyền truy cập microphone bị từ chối. Bạn vui lòng cấp quyền micro.",
         )
       } else {
         setVoiceMessage(
@@ -366,9 +522,9 @@ export function AIBreakdownModal({
     try {
       recognition.start()
       setIsListening(true)
-      setVoiceMessage("Đang nghe... hãy đọc mô tả công việc của bạn.")
+      setVoiceMessage("Đang nghe... hãy đọc mô tả công việc của bạn (Bấm lại để dừng).")
     } catch {
-      setVoiceMessage("Không thể bật micro. Vui lòng nhập văn bản.")
+      startAudioRecordingBreakdown()
     }
   }
 
@@ -726,12 +882,19 @@ export function AIBreakdownModal({
               <button
                 type="button"
                 onClick={startVoiceEntry}
-                disabled={isListening}
                 aria-label={
-                  isListening ? "Listening for voice input" : "Use voice input"
+                  isListening ? "Đang lắng nghe... Bấm để dừng" : "Nhập bằng giọng nói"
                 }
-                title="Nhập bằng giọng nói"
-                className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-[#e8f8ec] text-[#39ad64] transition hover:bg-[#d9f3e0] disabled:opacity-60"
+                title={
+                  isListening
+                    ? "Đang lắng nghe... Bấm để dừng và nhận diện"
+                    : "Nhập bằng giọng nói (Hỗ trợ Electron & Web)"
+                }
+                className={`flex h-8 w-8 items-center justify-center rounded-[9px] transition ${
+                  isListening
+                    ? "bg-rose-500 text-white animate-pulse shadow-sm shadow-rose-300"
+                    : "bg-[#e8f8ec] text-[#39ad64] hover:bg-[#d9f3e0]"
+                }`}
               >
                 <Icon name="mic" size={16} />
               </button>

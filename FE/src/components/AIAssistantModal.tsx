@@ -48,12 +48,16 @@ export default function AIAssistantModal({
   const [error, setError] = useState("")
   const [micError, setMicError] = useState("")
   const [isListening, setIsListening] = useState(false)
+  const [isTranscribing, setIsTranscribing] = useState(false)
   const [quota, setQuota] = useState<api.AiQuotaInfo | null>(null)
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null)
   const [speechSupported, setSpeechSupported] = useState(true)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
 
   // Tải thông tin quota
   useEffect(() => {
@@ -91,26 +95,165 @@ export default function AIAssistantModal({
     return () => clearInterval(timer)
   }, [retryCountdown])
 
+  // Dọn dẹp micro khi unmount
+  useEffect(() => {
+    return () => {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try {
+          mediaRecorderRef.current.stop()
+        } catch {
+          /* ignore */
+        }
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop()
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, [])
+
+  // Ghi âm âm thanh qua MediaRecorder và gửi về AI Backend (Hỗ trợ Electron & Web)
+  async function startAudioRecording() {
+    setMicError("")
+    setError("")
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMicError("Microphone không được hỗ trợ trên thiết bị này.")
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStreamRef.current = stream
+      audioChunksRef.current = []
+
+      let mimeType = "audio/webm"
+      if (typeof MediaRecorder !== "undefined") {
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          mimeType = "audio/webm;codecs=opus"
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = "audio/webm"
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          mimeType = "audio/mp4"
+        }
+      }
+
+      const recorder = new MediaRecorder(stream, { mimeType })
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.onstop = async () => {
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop())
+          mediaStreamRef.current = null
+        }
+
+        const chunks = audioChunksRef.current
+        audioChunksRef.current = []
+
+        if (chunks.length === 0) {
+          setIsListening(false)
+          return
+        }
+
+        const audioBlob = new Blob(chunks, { type: mimeType })
+        if (audioBlob.size < 600) {
+          setIsListening(false)
+          setMicError("Đoạn ghi âm quá ngắn hoặc chưa có tiếng nói. Hãy thử lại.")
+          return
+        }
+
+        setIsTranscribing(true)
+        setIsListening(false)
+        setMicError("")
+
+        try {
+          const reader = new FileReader()
+          reader.onloadend = async () => {
+            try {
+              const base64Audio = reader.result as string
+              const res = await api.transcribeAudio(base64Audio, mimeType)
+              if (res.text && res.text.trim()) {
+                setInput(res.text.trim())
+                setMicError("")
+              } else {
+                setMicError("Không nghe rõ âm thanh. Bạn hãy nói lại hoặc gõ văn bản.")
+              }
+            } catch (err: any) {
+              setMicError(
+                err?.message || "Lỗi khi nhận diện giọng nói từ máy chủ. Bạn có thể gõ bằng bàn phím."
+              )
+            } finally {
+              setIsTranscribing(false)
+            }
+          }
+          reader.readAsDataURL(audioBlob)
+        } catch {
+          setIsTranscribing(false)
+        }
+      }
+
+      recorder.start(250)
+      setIsListening(true)
+      setMicError("")
+    } catch (err: any) {
+      setIsListening(false)
+      if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+        setMicError("⚠️ Quyền truy cập microphone bị từ chối. Vui lòng cấp quyền micro trong cài đặt hệ thống.")
+      } else {
+        setMicError("Không thể bật micro: " + (err?.message || "Kiểm tra thiết bị thu âm."))
+      }
+    }
+  }
+
   // Khởi động / Dừng nhận diện giọng nói
   function toggleListening() {
     setMicError("")
     setError("")
 
-    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRec) {
-      setMicError(
-        "⚠️ Trình duyệt hiện tại không hỗ trợ Web Speech API. Bạn vui lòng sử dụng khung nhập liệu văn bản bên dưới.",
-      )
+    if (isListening) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop()
+        return
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop()
+        } catch {
+          /* ignore */
+        }
+      }
+      setIsListening(false)
       return
     }
 
-    if (isListening) {
-      try {
-        recognitionRef.current?.stop()
-      } catch {
-        /* ignore */
-      }
-      setIsListening(false)
+    const isElectron =
+      typeof window !== "undefined" &&
+      (Boolean((window as any).electronAPI) ||
+        navigator.userAgent.toLowerCase().includes("electron"))
+
+    // Trong Electron window: Dùng trực tiếp MediaRecorder + AI Backend để vượt qua hạn chế Google Speech
+    if (isElectron) {
+      startAudioRecording()
+      return
+    }
+
+    // Trên Web chuẩn: Thử Web Speech API, tự động fallback nếu lỗi network
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRec) {
+      startAudioRecording()
       return
     }
 
@@ -135,27 +278,21 @@ export default function AIAssistantModal({
         }
       }
 
-      // Xử lý ngoại lệ (Quyền micro, lỗi kết nối)
       recognition.onerror = (event: any) => {
         setIsListening(false)
-        if (
+        if (event.error === "network") {
+          // Khi Web Speech API bị lỗi kết nối Google -> tự động fallback sang ghi âm AI
+          startAudioRecording()
+        } else if (
           event.error === "not-allowed" ||
           event.error === "service-not-allowed"
         ) {
           setMicError(
-            "⚠️ Quyền truy cập microphone bị từ chối hoặc bị chặn. Bạn vui lòng cấp quyền truy cập micro trong cài đặt trình duyệt hoặc nhập liệu bằng văn bản.",
+            "⚠️ Quyền truy cập microphone bị từ chối. Bạn vui lòng cấp quyền truy cập micro trong cài đặt trình duyệt.",
           )
         } else if (event.error === "no-speech") {
           setMicError(
             "Chưa nhận được âm thanh. Hãy thử lại hoặc gõ tin nhắn vào ô bên dưới.",
-          )
-        } else if (event.error === "network") {
-          setMicError(
-            "Dịch vụ giọng nói Google Speech API không hỗ trợ trong cửa sổ Electron Desktop do chính sách mạng của Google. Vui lòng mở bằng trình duyệt Google Chrome (http://localhost:8443) để nói, hoặc nhập liệu trực tiếp bằng văn bản!",
-          )
-        } else if (event.error === "network") {
-          setMicError(
-            "Dịch vụ giọng nói Google Speech API không hỗ trợ trong cửa sổ Electron Desktop do chính sách mạng của Google. Vui lòng mở bằng trình duyệt Google Chrome (http://localhost:8443) để nói, hoặc nhập liệu trực tiếp bằng văn bản!",
           )
         } else {
           setMicError(
@@ -170,11 +307,8 @@ export default function AIAssistantModal({
 
       recognitionRef.current = recognition
       recognition.start()
-    } catch (err) {
-      setIsListening(false)
-      setMicError(
-        "Không thể khởi tạo micro. Bạn vui lòng thử lại hoặc gõ bằng bàn phím.",
-      )
+    } catch {
+      startAudioRecording()
     }
   }
 
@@ -184,10 +318,19 @@ export default function AIAssistantModal({
     if (retryCountdown !== null && retryCountdown > 0) return
 
     if (isListening) {
-      try {
-        recognitionRef.current?.stop()
-      } catch {
-        /* ignore */
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try {
+          mediaRecorderRef.current.stop()
+        } catch {
+          /* ignore */
+        }
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop()
+        } catch {
+          /* ignore */
+        }
       }
       setIsListening(false)
     }
@@ -507,20 +650,23 @@ export default function AIAssistantModal({
             <button
               type="button"
               onClick={toggleListening}
+              disabled={isTranscribing}
               title={
-                isListening
-                  ? "Đang lắng nghe... Bấm để dừng"
-                  : speechSupported
-                    ? "Nói để nhập liệu bằng giọng nói"
-                    : "Trình duyệt không hỗ trợ Web Speech"
+                isTranscribing
+                  ? "Đang nhận diện giọng nói..."
+                  : isListening
+                    ? "Đang lắng nghe... Bấm để dừng và nhận diện"
+                    : "Nói để nhập liệu bằng giọng nói"
               }
               className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${
-                isListening
-                  ? "bg-rose-500 text-white animate-pulse shadow-md shadow-rose-200"
-                  : "border border-slate-200 bg-[#f7faf8] text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
+                isTranscribing
+                  ? "bg-amber-500 text-white animate-spin shadow-md shadow-amber-200"
+                  : isListening
+                    ? "bg-rose-500 text-white animate-pulse shadow-md shadow-rose-200"
+                    : "border border-slate-200 bg-[#f7faf8] text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
               }`}
             >
-              <Icon name="mic" size={18} />
+              <Icon name={isTranscribing ? "sparkle" : "mic"} size={18} />
               {isListening && (
                 <span className="absolute -top-1 -right-1 flex h-3 w-3">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
@@ -535,12 +681,14 @@ export default function AIAssistantModal({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={
-                isListening
-                  ? "Đang lắng nghe giọng nói của bạn... Hãy nói yêu cầu"
-                  : 'Hỏi đáp hoặc gõ: "Tạo việc họp nhóm lúc 10h thứ Ba"...'
+                isTranscribing
+                  ? "⏳ Đang chuyển giọng nói thành văn bản..."
+                  : isListening
+                    ? "Đang lắng nghe giọng nói... Bấm lại vào nút Micro khi nói xong"
+                    : 'Hỏi đáp hoặc gõ: "Tạo việc họp nhóm lúc 10h thứ Ba"...'
               }
               disabled={
-                loading || (retryCountdown !== null && retryCountdown > 0)
+                loading || isTranscribing || (retryCountdown !== null && retryCountdown > 0)
               }
               className="h-10 flex-1 rounded-xl border border-slate-200 bg-[#fbfdfb] px-3.5 text-xs sm:text-sm text-slate-800 outline-none focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
             />
@@ -550,6 +698,7 @@ export default function AIAssistantModal({
               type="submit"
               disabled={
                 loading ||
+                isTranscribing ||
                 !input.trim() ||
                 (retryCountdown !== null && retryCountdown > 0)
               }
@@ -561,7 +710,7 @@ export default function AIAssistantModal({
 
           {/* Ghi chú minh bạch */}
           <p className="mt-2 text-center text-[10px] text-slate-400">
-            Micro chuyển giọng nói thành văn bản trên máy. Trợ lý AI phân tích
+            Micro chuyển giọng nói thành văn bản (hỗ trợ cả Electron Desktop & Web). Trợ lý AI phân tích
             để trả lời và đề xuất việc.
           </p>
         </footer>
